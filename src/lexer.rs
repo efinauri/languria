@@ -23,7 +23,7 @@ enum TokenType {
     MUL,
     IDENTIFIER(String),
     STRING(String),
-    NUMBER(i32),
+    INTEGER(i32),
     STRUCT,
     IF,
     ELSE,
@@ -122,7 +122,7 @@ impl<'a> Lexer<'_> {
                 _ => break
             }
         }
-        TokenType::NUMBER(i32::from_str(s.as_str()).unwrap())
+        TokenType::INTEGER(i32::from_str(s.as_str()).unwrap())
     }
 
     fn consume_str(&mut self, starting_symbol: char) -> TokenType {
@@ -233,5 +233,18 @@ mod tests {
         };
         dbg!(&str);
         assert_eq!(str.eq("hello, \"dude\"!"), true);
+    }
+
+    #[test]
+    fn consume_int() {
+        let mut es = ErrorScribe::new();
+        let mut l = Lexer::from_string(String::from("000_123_456"), &mut es);
+        let tt = l.consume_int('0');
+        let int = match tt {
+            TokenType::INTEGER(int) => int,
+            _ => { panic!("test failed") }
+        };
+        dbg!(int);
+        assert_eq!(int, 123456);
     }
 }
