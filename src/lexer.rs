@@ -1,11 +1,15 @@
+use std::clone::Clone;
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::iter::Iterator;
 use std::str::FromStr;
+use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe};
 use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, EQ, GT, GTE, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, RBRACE, RPAREN, UNEQ};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum TokenType {
     GT,
     LT,
@@ -31,14 +35,29 @@ enum TokenType {
     FN,
     IT,
     IDX,
-    TRUE,
-    FALSE,
     COMMA,
     DOT,
     BANG,
     EOF,
     ASSIGN,
     NOTATOKEN,
+    RETURN,
+    QUESTIONMARK,
+    ENUM,
+}
+
+lazy_static! {
+    static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
+    ("if", TokenType::IF),
+    ("else", TokenType::ELSE),
+    ("iter", TokenType::ITER),
+    ("it", TokenType::IT),
+    ("idx", TokenType::IDX),
+    ("fn", TokenType::FN),
+    ("return", TokenType::RETURN),
+    ("struct", TokenType::STRUCT),
+    ("enum", TokenType::ENUM),
+]);
 }
 
 pub struct Token {
@@ -113,16 +132,31 @@ impl<'a> Lexer<'_> {
     }
 
     fn consume_int(&mut self, starting_digit: char) -> TokenType {
-        let mut s = String::from(starting_digit);
+        let mut str = String::from(starting_digit);
         while self.can_consume() {
             let peeked = self.peek(1);
             match peeked {
-                '0'..='9' => { s.push(self.consume());}
-                '_' => {self.consume(); }
+                '0'..='9' => { str.push(self.consume()); }
+                '_' => { self.consume(); }
                 _ => break
             }
         }
-        TokenType::INTEGER(i32::from_str(s.as_str()).unwrap())
+        TokenType::INTEGER(i32::from_str(str.as_str()).unwrap())
+    }
+
+    fn consume_alphabet(&mut self, starting_symbol: char) -> TokenType {
+        let mut str = String::from(starting_symbol);
+        while self.can_consume() {
+            let peeked = self.peek(1);
+            match peeked {
+                'a'..='z' | 'A'..='Z' | '_' => { str.push(self.consume()); }
+                _ => { break; }
+            }
+        }
+        match RESERVED_KEYWORDS.get(str.as_str()) {
+            Some(tok) => { (*tok).clone() }
+            None => { TokenType::IDENTIFIER(str) }
+        }
     }
 
     fn consume_str(&mut self, starting_symbol: char) -> TokenType {
@@ -177,6 +211,7 @@ impl<'a> Lexer<'_> {
                 '>' => if self.next_eq("=") { GTE } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }
                 '0'..='9' => { self.consume_int(symbol) }
+                'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
                         Error::UNKNOWNSYMBOL {
@@ -246,5 +281,16 @@ mod tests {
         };
         dbg!(int);
         assert_eq!(int, 123456);
+    }
+
+    #[test]
+    fn consume_alphabet() {
+        let mut es = ErrorScribe::new();
+        let mut l = Lexer::from_string(String::from("f bob"), &mut es);
+        let tt = l.consume_alphabet('i');
+        assert_eq!(tt, TokenType::IF);
+        l.advance_pos(2);
+        let tt = l.consume_alphabet('b');
+        assert_eq!(tt, TokenType::IDENTIFIER("bob".parse().unwrap()));
     }
 }
