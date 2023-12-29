@@ -108,10 +108,18 @@ impl<'a> Lexer<'_> {
     fn can_peek(&self, amount: usize) -> bool {
         self.n_pos + amount < self.source.len()
     }
-    fn get_current(&self) -> char { self.peek(0) }
-    fn peek(&self, amount: usize) -> char {
-        self.source.chars().nth(amount + self.n_pos - 1)
-            .expect(&*format!("index error during source parsing: {}[{}]", self.source, self.n_pos))
+    fn get_current(&mut self) -> char { self.peek(0) }
+    fn peek(&mut self, amount: usize) -> char {
+        let result = self.source.chars().nth(amount + self.n_pos - 1)
+            .map_or('à', |ch| ch);
+        if !result.is_ascii() {
+            self.advance_pos(result.len_utf8());
+            self.scribe.annotate_error(Error::NONASCIICHARACTER {
+                line: self.n_line,
+                line_offset: self.n_pos,
+            })
+        }
+        result
     }
     fn can_consume(&self) -> bool { self.can_peek(0) }
     fn advance_pos(&mut self, amount: usize) {
@@ -178,7 +186,16 @@ impl<'a> Lexer<'_> {
                         });
                     return TokenType::STRING(str);
                 }
-                _ => {}
+                _ => {
+                    if !self.can_consume() {
+                        self.scribe.annotate_error(
+                            Error::BADSTRFMT {
+                                line: self.n_line,
+                                line_offset: starting_symbol_pos,
+                            }
+                        )
+                    }
+                }
             }
             symbol = self.consume();
         }
@@ -214,7 +231,7 @@ impl<'a> Lexer<'_> {
                 'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
-                        Error::UNKNOWNSYMBOL {
+                        Error::UNEXPECTEDTOKEN {
                             line: self.n_line,
                             line_offset: self.n_offset,
                             symbol,
