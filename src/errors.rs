@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::process;
-
+#[derive(PartialEq)]
 pub enum TerminationPolicy {
     STRICT,
     PERMISSIVE,

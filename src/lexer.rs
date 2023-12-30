@@ -247,7 +247,7 @@ impl<'a> Lexer<'_> {
         if self.tokens.iter()
             .map(|tok|&tok.ttype)
             .any(|ttype|ttype.eq(&NOTATOKEN)) {
-            &vec![]
+            self.tokens = vec![];
         }
         &self.tokens
     }
