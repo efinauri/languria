@@ -29,6 +29,7 @@ pub enum TokenType {
     IDENTIFIER(String),
     STRING(String),
     INTEGER(i32),
+    FLOAT(f64),
     STRUCT,
     IF,
     ELSE,
@@ -65,6 +66,8 @@ lazy_static! {
 ]);
 }
 
+
+
 pub struct Token {
     ttype: TokenType,
     line: usize,
@@ -90,7 +93,7 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("[{}, {}] {:?}", self.line, self.line_offset, self.ttype))?;
+        f.write_str(&*format!("{:?}", self.ttype))?;
         Ok(())
     }
 }
@@ -153,17 +156,27 @@ impl<'a> Lexer<'_> {
         false
     }
 
-    fn consume_int(&mut self, starting_digit: char) -> TokenType {
+    fn consume_num(&mut self, starting_digit: char) -> TokenType {
         let mut str = String::from(starting_digit);
+        let mut is_float = false;
         while self.can_consume() {
             let peeked = self.peek(1);
             match peeked {
                 '0'..='9' => { str.push(self.consume()); }
+                '.' => {
+                    if !is_float && ('0'..='9').contains(&self.peek(2)) {
+                        is_float = true;
+                    } else { break; }
+                }
                 '_' => { self.consume(); }
                 _ => break
             }
         }
-        TokenType::INTEGER(i32::from_str(str.as_str()).unwrap())
+        if is_float {
+            TokenType::FLOAT(f64::from_str(str.as_str()).unwrap())
+        } else {
+            TokenType::INTEGER(i32::from_str(str.as_str()).unwrap())
+        }
     }
 
     fn consume_alphabet(&mut self, starting_symbol: char) -> TokenType {
@@ -182,7 +195,6 @@ impl<'a> Lexer<'_> {
     }
 
     fn consume_str(&mut self, starting_symbol: char) -> TokenType {
-        let mut starting_symbol_pos = self.n_pos - 1;
         let mut str = String::new();
         let mut symbol = self.consume();
         while symbol != starting_symbol {
@@ -234,7 +246,7 @@ impl<'a> Lexer<'_> {
                 '<' => if self.next_eq("=") { LTE } else { LT }
                 '>' => if self.next_eq("=") { GTE } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }
-                '0'..='9' => { self.consume_int(symbol) }
+                '0'..='9' => { self.consume_num(symbol) }
                 'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
@@ -301,13 +313,36 @@ mod tests {
     fn consume_int() {
         let mut es = ErrorScribe::new();
         let mut l = Lexer::from_string(String::from("000_123_456"), &mut es);
-        let tt = l.consume_int('0');
+        let tt = l.consume_num('0');
         let int = match tt {
             TokenType::INTEGER(int) => int,
             _ => { panic!("test failed") }
         };
         dbg!(int);
         assert_eq!(int, 123456);
+    }
+
+    #[test]
+    fn consume_float() {
+        let mut es = ErrorScribe::new();
+        let mut l = Lexer::from_string(String::from(".28"), &mut es);
+        let tt = l.consume_num('0');
+        let flt = match tt {
+            TokenType::FLOAT(flt) => flt,
+            _ => { panic!("test failed") }
+        };
+        dbg!(flt);
+        assert_eq!(flt - 0.28 < 0.001, true);
+
+        let mut es = ErrorScribe::new();
+        let mut l = Lexer::from_string(String::from("345.double()"), &mut es);
+        let tt = l.consume_num('2');
+        let int = match tt {
+            TokenType::INTEGER(int) => int,
+            _ => { panic!("test failed") }
+        };
+        dbg!(int);
+        assert_eq!(2345, int);
     }
 
     #[test]

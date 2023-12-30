@@ -18,7 +18,7 @@ impl Display for Expression {
             Expression::UNARY { op, expr } =>
                 { f.write_str(&*format!("({} {})", op, expr)).unwrap(); }
             Expression::BINARY { lhs, op, rhs } =>
-                { f.write_str(&*format!("{} {} {}", lhs, op, rhs)).unwrap(); }
+                { f.write_str(&*format!("{} {} {}", op, lhs, rhs)).unwrap(); }
             Expression::GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)).unwrap(); }
         }
