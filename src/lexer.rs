@@ -4,6 +4,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::iter::Iterator;
 use std::str::FromStr;
+
 use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe};
@@ -241,6 +242,12 @@ impl<'a> Lexer<'_> {
                 }
             };
             self.tokens.push(Token::new(ttyp, self.n_line, self.n_offset - 1));
+        }
+        self.scribe.enact_termination_policy();
+        if self.tokens.iter()
+            .map(|tok|&tok.ttype)
+            .any(|ttype|ttype.eq(&NOTATOKEN)) {
+            &vec![]
         }
         &self.tokens
     }

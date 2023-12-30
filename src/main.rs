@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{Read, stdin};
 
 use crate::errors::ErrorScribe;
+use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
 
 mod lexer;
 mod errors;
@@ -22,7 +23,7 @@ fn interpret_file(path: &str) {
     let mut content = String::new();
     file.read_to_string(&mut content)
         .expect("could not read file contents.");
-    let mut es = errors::ErrorScribe::new();
+    let mut es = ErrorScribe::from_termination_policy(STRICT);
     interpret(&mut es, content);
 }
 
@@ -33,7 +34,7 @@ fn clear_terminal() {
 }
 
 fn serve_repl() {
-    let mut es = errors::ErrorScribe::new();
+    let mut es = ErrorScribe::from_termination_policy(PERMISSIVE);
     clear_terminal();
     loop {
         let mut user_input = String::new();
