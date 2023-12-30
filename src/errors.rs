@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::process;
+use crate::lexer::Lexer;
+
 #[derive(PartialEq)]
 pub enum TerminationPolicy {
     STRICT,
@@ -38,15 +40,28 @@ impl ErrorScribe {
     }
 }
 
-pub enum Error {
+pub enum ErrorType {
     //lexical errors
-    UNEXPECTEDTOKEN { line: usize, line_offset: usize, symbol: char },
-    BADSTRFMT { line: usize, line_offset: usize },
-    NONASCIICHARACTER { line: usize, line_offset: usize },
+    UNEXPECTEDTOKEN { symbol: char },
+    BADSTRFMT,
+    NONASCIICHARACTER { symbol: char },
 }
 
-fn err_location(line: &usize, line_offest: &usize) -> String {
-    format!("[{},{}] ", line, line_offest)
+pub struct Error {
+    etype: ErrorType,
+    line: usize,
+    line_offset: usize,
+}
+
+impl Error {
+    pub fn from_lexer_fault(l: &Lexer, etype: ErrorType) -> Error {
+        Error {
+            etype,
+            line: l.n_pos,
+            line_offset: l.n_offset,
+        }
+    }
+    fn err_location(&self) -> String { format!("[{},{}] ", self.line, self.line_offset) }
 }
 
 trait Red { fn red(&self) -> Self; }
@@ -57,17 +72,11 @@ impl Red for String {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::UNEXPECTEDTOKEN { line, line_offset, symbol } =>
-                f.write_str(&*format!("{}unexpected token: {}", err_location(line, line_offset), symbol)
-                    .red()),
-            Error::BADSTRFMT { line, line_offset } =>
-                f.write_str(&*format!("{}bad string format.", err_location(line, line_offset))
-                    .red()),
-            Error::NONASCIICHARACTER { line, line_offset } =>
-                f.write_str(&*format!("{}only ASCII characters are supported.", err_location(line, line_offset))
-                    .red())
-        }.expect("error during production of error message");
-        Ok(())
+        let msg = match self.etype {
+            ErrorType::UNEXPECTEDTOKEN { symbol } => format!("unexpected token: {}", symbol),
+            ErrorType::BADSTRFMT => String::from("bad string format."),
+            ErrorType::NONASCIICHARACTER { symbol } => format!("rejected non-ASCII token: {}", symbol),
+        };
+        f.write_str(&*(self.err_location() + &*msg).red())
     }
 }

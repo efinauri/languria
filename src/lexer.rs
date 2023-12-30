@@ -1,17 +1,17 @@
 use std::clone::Clone;
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Iterator;
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
 
-use crate::errors::{Error, ErrorScribe};
-use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, EQ, GT, GTE, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, RBRACE, RPAREN, UNEQ};
+use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, EQ, FALSE, GT, GTE, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, RBRACE, RPAREN, TRUE, UNEQ};
 
 #[derive(Debug, Clone, PartialEq)]
-enum TokenType {
+pub enum TokenType {
     GT,
     LT,
     GTE,
@@ -45,19 +45,23 @@ enum TokenType {
     RETURN,
     QUESTIONMARK,
     ENUM,
+    TRUE,
+    FALSE,
 }
 
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
-    ("if", TokenType::IF),
-    ("else", TokenType::ELSE),
-    ("iter", TokenType::ITER),
-    ("it", TokenType::IT),
-    ("idx", TokenType::IDX),
-    ("fn", TokenType::FN),
-    ("return", TokenType::RETURN),
-    ("struct", TokenType::STRUCT),
-    ("enum", TokenType::ENUM),
+        ("if", TokenType::IF),
+        ("else", TokenType::ELSE),
+        ("iter", TokenType::ITER),
+        ("it", TokenType::IT),
+        ("idx", TokenType::IDX),
+        ("fn", TokenType::FN),
+        ("return", TokenType::RETURN),
+        ("struct", TokenType::STRUCT),
+        ("enum", TokenType::ENUM),
+        ("true", TRUE),
+        ("false", FALSE)
 ]);
 }
 
@@ -68,6 +72,13 @@ pub struct Token {
 }
 
 impl Token {
+    pub fn from_debug(ttype: TokenType) -> Token {
+        Token {
+            ttype,
+            line: 0,
+            line_offset: 0,
+        }
+    }
     fn new(ttype: TokenType, line: usize, line_offset: usize) -> Token {
         Token {
             ttype,
@@ -84,13 +95,17 @@ impl Display for Token {
     }
 }
 
+impl Debug for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(self.to_string().as_str()) }
+}
+
 
 pub struct Lexer<'a> {
     source: String,
     tokens: Vec<Token>,
     n_line: usize,
-    n_pos: usize,
-    n_offset: usize,
+    pub(crate) n_pos: usize,
+    pub(crate) n_offset: usize,
     scribe: &'a mut ErrorScribe,
 }
 
@@ -115,10 +130,8 @@ impl<'a> Lexer<'_> {
             .map_or('à', |ch| ch);
         if !result.is_ascii() {
             self.advance_pos(result.len_utf8());
-            self.scribe.annotate_error(Error::NONASCIICHARACTER {
-                line: self.n_line,
-                line_offset: self.n_pos,
-            })
+            self.scribe.annotate_error(
+                Error::from_lexer_fault(&self, ErrorType::NONASCIICHARACTER { symbol: result }))
         }
         result
     }
@@ -181,20 +194,13 @@ impl<'a> Lexer<'_> {
                 }
                 '\n' => {
                     self.scribe.annotate_error(
-                        Error::BADSTRFMT {
-                            line: self.n_line,
-                            line_offset: starting_symbol_pos,
-                        });
+                        Error::from_lexer_fault(&self, ErrorType::BADSTRFMT));
                     return TokenType::STRING(str);
                 }
                 _ => {
                     if !self.can_consume() {
                         self.scribe.annotate_error(
-                            Error::BADSTRFMT {
-                                line: self.n_line,
-                                line_offset: starting_symbol_pos,
-                            }
-                        )
+                            Error::from_lexer_fault(&self, ErrorType::BADSTRFMT));
                     }
                 }
             }
@@ -232,12 +238,7 @@ impl<'a> Lexer<'_> {
                 'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
-                        Error::UNEXPECTEDTOKEN {
-                            line: self.n_line,
-                            line_offset: self.n_offset,
-                            symbol,
-                        }
-                    );
+                        Error::from_lexer_fault(&self, ErrorType::UNEXPECTEDTOKEN { symbol }));
                     NOTATOKEN
                 }
             };
@@ -245,8 +246,8 @@ impl<'a> Lexer<'_> {
         }
         self.scribe.enact_termination_policy();
         if self.tokens.iter()
-            .map(|tok|&tok.ttype)
-            .any(|ttype|ttype.eq(&NOTATOKEN)) {
+            .map(|tok| &tok.ttype)
+            .any(|ttype| ttype.eq(&NOTATOKEN)) {
             self.tokens = vec![];
         }
         &self.tokens
@@ -256,6 +257,8 @@ impl<'a> Lexer<'_> {
 
 #[cfg(test)]
 mod tests {
+    //TODO more comprehensive test cases
+    // - non unicode chars
     use crate::errors::ErrorScribe;
     use crate::lexer::{Lexer, TokenType};
 
