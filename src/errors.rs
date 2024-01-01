@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::process;
+
 use crate::lexer::Lexer;
 
 #[derive(PartialEq)]
@@ -57,7 +58,7 @@ impl Error {
     pub fn from_lexer_fault(l: &Lexer, etype: ErrorType) -> Error {
         Error {
             etype,
-            line: l.n_pos,
+            line: l.counter.get(),
             line_offset: l.n_offset,
         }
     }

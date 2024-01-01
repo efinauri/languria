@@ -8,6 +8,8 @@ use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
 mod lexer;
 mod errors;
 mod parser;
+mod shared;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -55,4 +57,7 @@ fn interpret(es: &mut ErrorScribe, instructions: String) {
     let tokens = lexer.produce_tokens();
     println!("produced following tokens: ");
     tokens.iter().for_each(|tok| println!("{}", tok));
+    let mut parser = parser::Parser::from_tokens(tokens.to_owned());
+    let expr = parser.parse();
+    println!("this is parsed as: {:?}", expr);
 }
