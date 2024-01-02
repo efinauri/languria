@@ -9,7 +9,6 @@ impl Counter {
     pub fn get(&self) -> usize { self.acc }
     pub fn mov(&mut self, steps: i32) { self.acc += steps as usize }
     pub fn step_fwd(&mut self) { self.mov(1) }
-    pub fn step_bwd(&mut self) { self.mov(-1) }
 }
 
 pub trait HasLength { fn length(&self) -> usize; }
@@ -27,7 +26,7 @@ pub trait WalksCollection<'a, V: 'a, I: 'a>
     fn read_curr(&'a self) -> &I { self.peek(0) }
     fn read_next(&'a self) -> &I { self.peek(1) }
     fn can_peek(&'a self, amount: usize) -> bool { self.cnt().get() + amount < self.arr().length() }
-    fn can_consume(&'a self) -> bool { self.can_peek(0) }
+    fn can_consume(&'a self) -> bool { self.can_peek(0)}
     fn consume(&'a mut self) -> &I {
         self.mut_cnt().step_fwd();
         self.read_prev()

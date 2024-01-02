@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
 
+use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::{BANG, DIV, EQ, FALSE, FLOAT, GT, GTE, INTEGER, LPAREN, LT, LTE, MINUS, MUL, PLUS, RPAREN, STRING, TRUE, UNEQ};
-use crate::parser::Expression::{BINARY, GROUPING, LITERAL, UNARY};
+use crate::parser::Expression::{BINARY, GROUPING, LITERAL, NOTANEXPR, UNARY};
 use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug)]
@@ -11,6 +12,7 @@ pub enum Expression {
     UNARY { op: Token, expr: Box<Expression> },
     BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     GROUPING { expr: Box<Expression> },
+    NOTANEXPR,
 }
 
 
@@ -22,9 +24,10 @@ impl Display for Expression {
             UNARY { op, expr } =>
                 { f.write_str(&*format!("({} {})", op, expr)).unwrap(); }
             BINARY { lhs, op, rhs } =>
-                { f.write_str(&*format!("{} {} {}", op, lhs, rhs)).unwrap(); }
+                { f.write_str(&*format!("{} <{} {}>", op, lhs, rhs)).unwrap(); }
             GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)).unwrap(); }
+            NOTANEXPR => { let _ = f.write_str("ERR"); }
         }
         Ok(())
     }
@@ -36,21 +39,29 @@ const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
 const UNARY_TOKENS: [TokenType; 2] = [BANG, MINUS];
 
-pub struct Parser {
+pub struct Parser<'a> {
     tokens: Vec<Token>,
     counter: Counter,
+    scribe: &'a mut ErrorScribe,
 }
 
-impl WalksCollection<'_, Vec<Token>, Token> for Parser {
+impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
     fn cnt(&self) -> &Counter { &self.counter }
     fn mut_cnt(&mut self) -> &mut Counter { &mut self.counter }
     fn arr(&self) -> &Vec<Token> { &self.tokens }
 }
 
 
-impl Parser {
-    pub fn from_tokens(tokens: Vec<Token>) -> Parser { Parser { tokens, counter: Counter::new() } }
-    pub fn parse(&mut self) -> Expression { self.build_expression() }
+impl Parser<'_> {
+    pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
+        Parser {
+            tokens,
+            counter: Counter::new(),
+            scribe,
+        }
+    }
+
+    pub fn parse(&mut self) -> Expression { if !self.tokens.is_empty() { self.build_expression() } else {NOTANEXPR}}
     fn build_expression(&mut self) -> Expression { self.equality() }
     fn equality(&mut self) -> Expression {
         let mut expr = self.comparison();
@@ -99,7 +110,6 @@ impl Parser {
 
         while self.next_in(&MATH_HI_PRIORITY_TOKENS) {
             self.counter.step_fwd();
-
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
@@ -118,24 +128,37 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Expression {
+        if !self.can_consume() {
+            self.scribe.annotate_error(Error::on_line(
+                self.read_prev().line,
+                ErrorType::EXPECTEDLITERAL));
+            return NOTANEXPR;
+        }
         return match &self.read_curr().ttype {
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) => {
                 self.counter.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
-            },
+            }
             LPAREN => {
                 let expr = self.build_expression();
-                self.next_must_be(RPAREN);
+                self.assert_next_is(RPAREN);
                 self.counter.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
-            _ => { panic!("TODO") }
+            _ => {
+                self.scribe.annotate_error(Error::on_line(
+                    self.read_curr().line,
+                    ErrorType::EXPECTEDLITERAL));
+                NOTANEXPR
+            }
         };
     }
 
-    fn next_must_be(&self, ttype: TokenType) {
+    fn assert_next_is(&mut self, ttype: TokenType) {
         if !self.can_consume() || ttype != self.read_curr().ttype {
-            //TODO raise error
+            self.scribe.annotate_error(Error::on_line(
+                0,
+                ErrorType::EXPECTEDTOKEN { ttype }));
         }
     }
     fn next_in(&self, ttypes: &[TokenType]) -> bool {

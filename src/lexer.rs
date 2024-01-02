@@ -69,8 +69,7 @@ lazy_static! {
 #[derive(PartialEq, Clone)]
 pub struct Token {
     pub ttype: TokenType,
-    line: usize,
-    line_offset: usize,
+    pub(crate) line: usize,
 }
 
 
@@ -79,14 +78,12 @@ impl Token {
         Token {
             ttype,
             line: 0,
-            line_offset: 0,
         }
     }
-    fn new(ttype: TokenType, line: usize, line_offset: usize) -> Token {
+    fn new(ttype: TokenType, line: usize) -> Token {
         Token {
             ttype,
             line,
-            line_offset,
         }
     }
 }
@@ -106,9 +103,8 @@ impl Debug for Token {
 pub struct Lexer<'a> {
     source: Vec<char>,
     tokens: Vec<Token>,
-    n_line: usize,
-    pub counter: Counter,
-    pub n_offset: usize,
+    cursor: usize,
+    counter: Counter,
     scribe: &'a mut ErrorScribe,
 }
 
@@ -124,8 +120,7 @@ impl<'a> Lexer<'_> {
             source: s.chars().collect(),
             counter: Counter::new(),
             tokens: vec![],
-            n_line: 0,
-            n_offset: 0,
+            cursor: 0,
             scribe,
         }
     }
@@ -133,17 +128,13 @@ impl<'a> Lexer<'_> {
     fn peek_or_err(&mut self, amount: usize) -> char {
         let result = self.peek(amount).clone();
         if !result.is_ascii() {
-            self.advance_pos(result.len_utf8());
+            self.counter.mov(result.len_utf8() as i32);
             self.scribe.annotate_error(
-                Error::from_lexer_fault(&self, ErrorType::NONASCIICHARACTER {
+                Error::on_line(self.cursor, ErrorType::NONASCIICHARACTER {
                     symbol: result
                 }))
         }
         result
-    }
-    fn advance_pos(&mut self, amount: usize) {
-        self.counter.mov(amount as i32);
-        self.n_offset += amount;
     }
 
     fn consume_next_if_eq(&mut self, other: char) -> bool {
@@ -163,6 +154,7 @@ impl<'a> Lexer<'_> {
                 '0'..='9' => { str.push(self.consume().clone()); }
                 '.' => {
                     if !is_float && ('0'..='9').contains(&self.peek_or_err(1)) {
+                        str.push(self.consume().clone());
                         is_float = true;
                     } else { break; }
                 }
@@ -204,13 +196,13 @@ impl<'a> Lexer<'_> {
                 }
                 '\n' => {
                     self.scribe.annotate_error(
-                        Error::from_lexer_fault(&self, ErrorType::BADSTRFMT));
+                        Error::on_line(self.cursor, ErrorType::BADSTRFMT));
                     return STRING(str);
                 }
                 _ => {
                     if !self.can_consume() {
                         self.scribe.annotate_error(
-                            Error::from_lexer_fault(&self, ErrorType::BADSTRFMT));
+                            Error::on_line(self.cursor, ErrorType::BADSTRFMT));
                     }
                 }
             }
@@ -221,12 +213,12 @@ impl<'a> Lexer<'_> {
 
     pub fn produce_tokens(&mut self) -> &Vec<Token> {
         while self.can_consume() {
+            self.cursor += 1;
             let symbol = self.consume().clone();
             let ttyp = match symbol {
                 ' ' | '\r' | '\t' => continue,
                 '\n' => {
-                    self.n_line += 1;
-                    self.n_offset = 0;
+                    self.cursor = 0;
                     continue;
                 }
                 ')' => RPAREN,
@@ -249,11 +241,11 @@ impl<'a> Lexer<'_> {
                 'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
-                        Error::from_lexer_fault(&self, ErrorType::UNEXPECTEDTOKEN { symbol }));
+                        Error::on_line(self.cursor, ErrorType::UNEXPECTEDCHAR { symbol }));
                     NOTATOKEN
                 }
             };
-            self.tokens.push(Token::new(ttyp, self.n_line, self.n_offset));
+            self.tokens.push(Token::new(ttyp, self.cursor));
         }
         self.scribe.enact_termination_policy();
         if self.tokens.iter()
@@ -280,7 +272,7 @@ mod tests {
         let mut es = ErrorScribe::new();
         let mut l = Lexer::from_string(String::from("="), &mut es);
         assert_eq!(l.can_consume(), true);
-        l.advance_pos(1);
+        l.counter.step_fwd();
         assert_eq!(l.can_consume(), false);
     }
 
@@ -299,7 +291,7 @@ mod tests {
     fn consume_str() {
         let mut es = ErrorScribe::new();
         let mut l = Lexer::from_string(String::from(r#""hello, \"dude\"!""#), &mut es);
-        l.advance_pos(1);
+        l.counter.step_fwd();
         let tt = l.consume_str('"');
         let str = match tt {
             STRING(str) => str,
@@ -351,7 +343,7 @@ mod tests {
         let mut l = Lexer::from_string(String::from("f bob"), &mut es);
         let tt = l.consume_alphabet('i');
         assert_eq!(tt, IF);
-        l.advance_pos(2);
+        l.counter.mov(2);
         let tt = l.consume_alphabet('b');
         assert_eq!(tt, IDENTIFIER("bob".parse().unwrap()));
     }
