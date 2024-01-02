@@ -1,5 +1,5 @@
 use std::ops::Index;
-
+#[derive(Debug)]
 pub struct Counter {
     acc: usize,
 }
@@ -12,8 +12,9 @@ impl Counter {
     pub fn step_bwd(&mut self) { self.mov(-1) }
 }
 
-trait HasLength { fn length(&self) -> usize; }
+pub trait HasLength { fn length(&self) -> usize; }
 impl<T> HasLength for Vec<T> { fn length(&self) -> usize { self.len() } }
+
 
 pub trait WalksCollection<'a, V: 'a, I: 'a>
     where V: FromIterator<I> + Index<usize, Output=I> + HasLength,
@@ -21,15 +22,15 @@ pub trait WalksCollection<'a, V: 'a, I: 'a>
     fn cnt(&self) -> &Counter;
     fn mut_cnt(&mut self) -> &mut Counter;
     fn arr(&self) -> &V;
-    fn peek(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() + amount - 1] }
-    fn read_prev(&'a self) -> &I { &self.arr()[self.cnt().get() - 1] }
-    fn read_curr(&'a mut self) -> &I { self.peek(0) }
-    fn read_next(&'a mut self) -> &I { self.peek(1) }
+    fn peek(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() + amount] }
+    fn read_prev(&'a self) -> &I {&self.arr()[self.cnt().get() - 1] }
+    fn read_curr(&'a self) -> &I { self.peek(0) }
+    fn read_next(&'a self) -> &I { self.peek(1) }
     fn can_peek(&'a self, amount: usize) -> bool { self.cnt().get() + amount < self.arr().length() }
     fn can_consume(&'a self) -> bool { self.can_peek(0) }
     fn consume(&'a mut self) -> &I {
         self.mut_cnt().step_fwd();
-        self.read_curr()
+        self.read_prev()
     }
 }
 

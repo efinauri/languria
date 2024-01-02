@@ -3,12 +3,12 @@ use std::process;
 
 use crate::lexer::Lexer;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum TerminationPolicy {
     STRICT,
     PERMISSIVE,
 }
-
+#[derive(Debug)]
 pub struct ErrorScribe {
     errors: Vec<Error>,
     termination_policy: TerminationPolicy,
@@ -40,14 +40,14 @@ impl ErrorScribe {
         }
     }
 }
-
+#[derive(Debug)]
 pub enum ErrorType {
     //lexical errors
     UNEXPECTEDTOKEN { symbol: char },
     BADSTRFMT,
     NONASCIICHARACTER { symbol: char },
 }
-
+#[derive(Debug)]
 pub struct Error {
     etype: ErrorType,
     line: usize,

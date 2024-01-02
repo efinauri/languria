@@ -118,10 +118,10 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Expression {
-        return match &self.peek(1).ttype {
+        return match &self.read_curr().ttype {
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) => {
                 self.counter.step_fwd();
-                LITERAL { value: self.peek(0).clone() }
+                LITERAL { value: self.read_prev().clone() }
             },
             LPAREN => {
                 let expr = self.build_expression();
@@ -134,12 +134,12 @@ impl Parser {
     }
 
     fn next_must_be(&self, ttype: TokenType) {
-        if !self.can_peek(1) || ttype != self.peek(1).ttype {
+        if !self.can_consume() || ttype != self.read_curr().ttype {
             //TODO raise error
         }
     }
     fn next_in(&self, ttypes: &[TokenType]) -> bool {
-        self.can_peek(1) && ttypes.contains(&self.peek(1).ttype)
+        self.can_consume() && ttypes.contains(&self.read_curr().ttype)
     }
 }
 

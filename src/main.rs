@@ -59,5 +59,5 @@ fn interpret(es: &mut ErrorScribe, instructions: String) {
     tokens.iter().for_each(|tok| println!("{}", tok));
     let mut parser = parser::Parser::from_tokens(tokens.to_owned());
     let expr = parser.parse();
-    println!("this is parsed as: {:?}", expr);
+    println!("this is parsed as:\n{}", expr);
 }

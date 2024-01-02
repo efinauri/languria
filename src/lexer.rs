@@ -8,7 +8,7 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, ELSE, ENUM, EQ, FALSE, FLOAT, FN, GT, GTE, IDENTIFIER, IDX, IF, INTEGER, IT, ITER, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, RBRACE, RETURN, RPAREN, STRING, STRUCT, TRUE, UNEQ};
+use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, ELSE, ENUM, EQ, FALSE, FLOAT, FN, GT, GTE, IDENTIFIER, IDX, IF, INTEGER, IT, ITER, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, QUESTIONMARK, RBRACE, RETURN, RPAREN, STRING, STRUCT, TRUE, UNEQ};
 use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +102,7 @@ impl Debug for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(self.to_string().as_str()) }
 }
 
-
+#[derive(Debug)]
 pub struct Lexer<'a> {
     source: Vec<char>,
     tokens: Vec<Token>,
@@ -147,7 +147,7 @@ impl<'a> Lexer<'_> {
     }
 
     fn consume_next_if_eq(&mut self, other: char) -> bool {
-        if self.can_peek(1) && *self.peek(1) == other {
+        if self.can_consume() && *self.read_curr() == other {
             self.mut_cnt().step_fwd();
             return true;
         }
@@ -158,11 +158,11 @@ impl<'a> Lexer<'_> {
         let mut str = String::from(starting_digit);
         let mut is_float = false;
         while self.can_consume() {
-            let peeked = self.peek_or_err(1);
+            let peeked = self.peek_or_err(0);
             match peeked {
                 '0'..='9' => { str.push(self.consume().clone()); }
                 '.' => {
-                    if !is_float && ('0'..='9').contains(&self.peek_or_err(2)) {
+                    if !is_float && ('0'..='9').contains(&self.peek_or_err(1)) {
                         is_float = true;
                     } else { break; }
                 }
@@ -180,7 +180,7 @@ impl<'a> Lexer<'_> {
     fn consume_alphabet(&mut self, starting_symbol: char) -> TokenType {
         let mut str = String::from(starting_symbol);
         while self.can_consume() {
-            let peeked = self.peek_or_err(1);
+            let peeked = self.peek_or_err(0);
             match peeked {
                 'a'..='z' | 'A'..='Z' | '_' => { str.push(self.consume().clone()); }
                 _ => { break; }
@@ -239,6 +239,7 @@ impl<'a> Lexer<'_> {
                 '+' => PLUS,
                 '*' => MUL,
                 '/' => DIV,
+                '?' => QUESTIONMARK,
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
                 '=' => if self.consume_next_if_eq('=') { EQ } else { ASSIGN }
                 '<' => if self.consume_next_if_eq('=') { LTE } else { LT }
@@ -289,6 +290,7 @@ mod tests {
         let mut l = Lexer::from_string(String::from("12"), &mut es);
         assert_eq!(l.consume_next_if_eq('6'), false);
         assert_eq!(l.consume_next_if_eq('1'), true);
+        dbg!(&l);
         assert_eq!(*l.consume(), '2');
         assert_eq!(l.consume_next_if_eq('?'), false);
     }
