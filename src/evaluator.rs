@@ -1,18 +1,37 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fmt::{Display, Formatter};
 use std::ops::Neg;
 
 use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, NOTAVAL, STRING};
 use crate::lexer::TokenType;
 use crate::parser::Expression;
+use crate::parser::Expression::{LITERAL, VAR_RAW};
 
 pub struct Scope {
     env: HashMap<String, Value>,
-    print_line: usize
+    print_line: usize,
+    entry_point: String,
 }
 
 impl Scope {
-    pub fn new() -> Scope { Scope { env: Default::default() , print_line: 0 } }
+    pub fn reset_print(&mut self) { self.print_line = 0; }
+}
+
+impl Scope {
+    pub fn register_entrypoint(&mut self, entry_point: &OsStr) {
+        self.entry_point = String::from(entry_point.to_str().unwrap());
+    }
+}
+
+impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            env: Default::default(),
+            print_line: 0,
+            entry_point: String::from("REPL"),
+        }
+    }
 
     fn write(&mut self, varname: &String, varval: Value) -> Value {
         self.env.insert(varname.clone(), varval.clone());
@@ -84,8 +103,26 @@ impl Value {
         }
     }
 
-    fn print_it(&self, start_new_line: bool) -> &Value {
-        if start_new_line { print!("\n{}", &self); } else { print!(", {}", &self); }
+    fn print_it(&self, curr_line: usize, scope: &mut Scope, tag: Option<&Box<Expression>>) -> &Value {
+        let tag = match tag {
+            Some(boxx)
+            => {
+                match (**boxx).clone() {
+                    LITERAL { value } =>
+                    match value.ttype {
+                        TokenType::IDENTIFIER(str) => {
+                            format!("{}: ", str)
+                        }
+                        _ => String::new()
+                    }
+                    _ => String::new()
+                }
+            }
+            _ => String::new()
+        };
+        let start_new_line = scope.print_line != curr_line;
+        scope.print_line = curr_line;
+        if start_new_line { print!("\n{}{}", tag, &self); } else { print!(", {}{}", tag, &self); }
         &self
     }
 
@@ -148,11 +185,11 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
             let val = evaluate_expression(varval, scope);
             scope.write(varname, val).clone()
         }
-        Expression::VAR_RAW { varname } => {
+        VAR_RAW { varname } => {
             scope.read(varname).clone()
         }
 
-        Expression::LITERAL { value } => {
+        LITERAL { value } => {
             match &value.ttype {
                 TokenType::FALSE => BOOLEAN(false),
                 TokenType::TRUE => BOOLEAN(true),
@@ -169,23 +206,22 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
                 TokenType::BANG => { expr.bang_it() }
                 TokenType::MINUS => { expr.minus_it() }
                 TokenType::DOLLAR => {
-                    let print_on_new_line = scope.print_line != op.line;
-                    scope.print_line = op.line;
-                    expr.print_it(print_on_new_line).clone()
+                    expr.print_it(op.line, scope, None).clone()
                 }
                 _ => { ERR }
             }
         }
 
         Expression::BINARY { lhs, op, rhs } => {
-            let lhs = evaluate_expression(lhs, scope);
-            let rhs = evaluate_expression(rhs, scope);
+            let elhs = evaluate_expression(lhs, scope);
+            let erhs = evaluate_expression(rhs, scope);
 
             match op.ttype {
-                TokenType::MINUS => { lhs.minus_them(rhs) }
-                TokenType::PLUS => { lhs.plus_them(rhs) }
-                TokenType::MUL => { lhs.mul_them(rhs) }
-                TokenType::DIV => { lhs.div_them(rhs) }
+                TokenType::DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }
+                TokenType::MINUS => { elhs.minus_them(erhs) }
+                TokenType::PLUS => { elhs.plus_them(erhs) }
+                TokenType::MUL => { elhs.mul_them(erhs) }
+                TokenType::DIV => { elhs.div_them(erhs) }
                 // TokenType::GT => { lhs > rhs }
                 // TokenType::GTE => { lhs >= rhs }
                 // TokenType::LT => { lhs < rhs }

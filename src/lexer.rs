@@ -45,7 +45,7 @@ pub enum TokenType {
     QUESTIONMARK,
     TRUE,
     FALSE,
-    EOF
+    EOF,
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -78,6 +78,15 @@ impl Token {
             ttype,
             line,
         }
+    }
+    pub fn type_equals(&self, other: &TokenType) -> bool {
+        return match (&self.ttype, other) {
+            (IDENTIFIER(_), IDENTIFIER(_)) |
+            (STRING(_), STRING(_)) |
+            (INTEGER(_), INTEGER(_)) |
+            (FLOAT(_), FLOAT(_)) => { true }
+            (_, _) => { self.ttype.eq(other) }
+        };
     }
 }
 
@@ -152,7 +161,7 @@ impl<'a> Lexer<'_> {
                     } else { break; }
                 }
                 '_' => { self.consume(); }
-                _ => {break}
+                _ => { break; }
             }
         }
         if is_float {

@@ -6,7 +6,7 @@ use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
 use crate::shared::{Counter, WalksCollection};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     LITERAL { value: Token },
     UNARY { op: Token, expr: Box<Expression> },
@@ -137,6 +137,14 @@ impl Parser<'_> {
     fn unary(&mut self) -> Expression {
         if self.next_in(&UNARY_TOKENS) {
             self.counter.step_fwd();
+            let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
+            if self.curr_is_seq(&seq) {
+                let op = self.read_prev().clone();
+                self.counter.step_fwd();
+                let value = self.read_curr().clone();
+                self.counter.mov(2);
+                return BINARY { op: op, rhs: Box::new(LITERAL { value }), lhs: Box::new(self.unary()) };
+            }
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
         }
         self.primary()
@@ -146,7 +154,7 @@ impl Parser<'_> {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
                 self.read_prev().line,
-                ErrorType::EXPECTEDLITERAL {found: EOF}));
+                ErrorType::EXPECTEDLITERAL { found: EOF }));
             return NOTANEXPR;
         }
         return match &self.tokens.get(self.counter.get()).unwrap().ttype {
@@ -181,6 +189,15 @@ impl Parser<'_> {
                 0,
                 ErrorType::EXPECTEDTOKEN { ttype }));
         }
+    }
+
+    fn curr_is_seq(&self, ttypes: &[TokenType]) -> bool {
+        if !self.can_peek(ttypes.len() - 1) { return false; }
+        if self.counter.get() == 0 { return false; }
+        if !self.read_prev().type_equals(&ttypes[0]) { return false; }
+        ttypes[1..].iter()
+            .zip(0..)
+            .all(|(tt, i)| self.peek(i).type_equals(tt))
     }
 
     fn next_in(&self, ttypes: &[TokenType]) -> bool {

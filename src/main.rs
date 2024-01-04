@@ -1,6 +1,9 @@
 use std::env;
 use std::fs::File;
 use std::io::{Read, stdin, stdout, Write};
+use std::path::Path;
+use std::thread::scope;
+
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
 use crate::evaluator::Scope;
@@ -21,14 +24,18 @@ fn main() {
     }
 }
 
-fn interpret_file(path: &str) {
-    let mut file = File::open(path)
-        .expect("no file found for the given filepath.");
+fn interpret_file(filename: &str) {
+    let path = Path::new(filename);
+    let mut file = match File::open(path) {
+        Ok(f) => { f }
+        Err(_) => { return serve_repl();}
+    };
     let mut content = String::new();
     file.read_to_string(&mut content)
         .expect("could not read file contents.");
     let mut es = ErrorScribe::from_termination_policy(STRICT);
     let mut main_scope = Scope::new();
+    main_scope.register_entrypoint(path.file_name().unwrap());
     interpret_instructions(&mut es, content, &mut main_scope, false);
 }
 
@@ -43,7 +50,7 @@ fn serve_repl() {
     let mut es = ErrorScribe::from_termination_policy(PERMISSIVE);
     let mut main_scope = Scope::new();
     clear_terminal();
-    println!("languria REPL - q to quit, dbg to toggle debug mode");
+    println!("**START OF REPL** - q to quit, dbg to toggle debug mode");
     loop {
         let mut user_input = String::new();
         print!("\n> ");
@@ -54,11 +61,13 @@ fn serve_repl() {
             "q";
             ""
         }.contains(&user_input.to_lowercase()) { break; }
-        if "dbg".eq(&user_input) {
+        if user_input.starts_with("dbg") {
             verbose = !verbose;
-            println!("debug mode {}", if verbose { "ON" } else { "OFF" })
+            println!("debug mode {}", if verbose { "ON" } else { "OFF" });
+            continue;
         }
         interpret_instructions(&mut es, user_input, &mut main_scope, verbose);
+        main_scope.reset_print();
     }
 }
 
