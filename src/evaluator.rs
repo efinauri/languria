@@ -109,12 +109,12 @@ impl Value {
             => {
                 match (**boxx).clone() {
                     LITERAL { value } =>
-                    match value.ttype {
-                        TokenType::IDENTIFIER(str) => {
-                            format!("{}: ", str)
+                        match value.ttype {
+                            TokenType::IDENTIFIER(str) => {
+                                format!("{}: ", str)
+                            }
+                            _ => String::new()
                         }
-                        _ => String::new()
-                    }
                     _ => String::new()
                 }
             }
