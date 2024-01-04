@@ -8,11 +8,13 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::TokenType::{ASSIGN, BANG, COMMA, DIV, DOT, ELSE, ENUM, EQ, FALSE, FLOAT, FN, GT, GTE, IDENTIFIER, IDX, IF, INTEGER, IT, ITER, LBRACE, LPAREN, LT, LTE, MINUS, MUL, NOTATOKEN, PLUS, QUESTIONMARK, RBRACE, RETURN, RPAREN, STRING, STRUCT, TRUE, UNEQ};
+use crate::lexer::TokenType::*;
 use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
+    DOLLAR,
+    AT,
     GT,
     LT,
     GTE,
@@ -31,12 +33,8 @@ pub enum TokenType {
     STRING(String),
     INTEGER(i32),
     FLOAT(f64),
-    STRUCT,
-    IF,
-    ELSE,
-    ITER,
-    FN,
     IT,
+    TI,
     IDX,
     COMMA,
     DOT,
@@ -51,14 +49,10 @@ pub enum TokenType {
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
-        ("if", IF),
-        ("else", ELSE),
-        ("iter", ITER),
         ("it", IT),
+        ("ti", TI),
         ("idx", IDX),
-        ("fn", FN),
         ("return", RETURN),
-        ("struct", STRUCT),
         ("enum", ENUM),
         ("true", TRUE),
         ("false", FALSE)
@@ -232,6 +226,8 @@ impl<'a> Lexer<'_> {
                 '*' => MUL,
                 '/' => DIV,
                 '?' => QUESTIONMARK,
+                '$' => DOLLAR,
+                '@' => AT,
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
                 '=' => if self.consume_next_if_eq('=') { EQ } else { ASSIGN }
                 '<' => if self.consume_next_if_eq('=') { LTE } else { LT }
@@ -264,7 +260,7 @@ mod tests {
     // - non unicode chars
     use crate::errors::ErrorScribe;
     use crate::lexer::Lexer;
-    use crate::lexer::TokenType::{FLOAT, IDENTIFIER, IF, INTEGER, STRING};
+    use crate::lexer::TokenType::*;
     use crate::shared::WalksCollection;
 
     #[test]
@@ -340,9 +336,9 @@ mod tests {
     #[test]
     fn consume_alphabet() {
         let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("f bob"), &mut es);
+        let mut l = Lexer::from_string(String::from("t bob"), &mut es);
         let tt = l.consume_alphabet('i');
-        assert_eq!(tt, IF);
+        assert_eq!(tt, IT);
         l.counter.mov(2);
         let tt = l.consume_alphabet('b');
         assert_eq!(tt, IDENTIFIER("bob".parse().unwrap()));

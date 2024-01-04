@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::Neg;
 
@@ -5,7 +6,35 @@ use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, NOTAVAL, STRING};
 use crate::lexer::TokenType;
 use crate::parser::Expression;
 
+pub struct Scope {
+    env: HashMap<String, Value>,
+}
+
+impl Scope {
+    pub fn new() -> Scope { Scope { env: Default::default() } }
+
+    fn write(&mut self, varname: &String, varval: Value) -> Value {
+        self.env.insert(varname.clone(), varval.clone());
+        varval.clone()
+    }
+
+    fn read(&self, varname: &String) -> Value {
+        if self.env.contains_key(varname) {
+            self.env.get(varname).unwrap().clone()
+        } else { ERR }
+    }
+}
+
+pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope) -> Value {
+    let mut ret = ERR;
+    for expr in exprs {
+        ret = evaluate_expression(&expr, x);
+    }
+    ret
+}
+
 #[derive(Debug)]
+#[derive(Clone)]
 pub enum Value {
     INTEGER(i32),
     FLOAT(f64),
@@ -22,18 +51,11 @@ impl Display for Value {
             FLOAT(flt) => { f.write_str(&*flt.to_string()) }
             STRING(str) => { f.write_str(str) }
             BOOLEAN(boo) => { f.write_str(&*boo.to_string()) }
-            NOTAVAL => {f.write_str("no input.")}
+            NOTAVAL => { f.write_str("no input.") }
             _ => { f.write_str("ERR") }
         }
     }
 }
-
-// fn bool_as_int(v: &Value) -> Value {
-//     return match v {
-//         BOOLEAN(boo) => INTEGER(if *boo { 1 } else { 0 }),
-//         _ => { ERR }
-//     };
-// }
 
 fn num_as_bool(v: &Value) -> Value {
     return match v {
@@ -59,6 +81,11 @@ impl Value {
             FLOAT(flt) => { FLOAT(flt.neg()) }
             _ => { ERR }
         }
+    }
+
+    fn print_it(&self) -> &Value {
+        print!("{}, ", &self);
+        &self
     }
 
     fn minus_them(&self, other: Value) -> Value {
@@ -100,12 +127,29 @@ impl Value {
             (_, _) => ERR
         }
     }
+
+    fn div_them(&self, other: Value) -> Value {
+        match (self, other) {
+            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(i / j) } }
+            (INTEGER(i), FLOAT(J)) => { if J == 0.0 { ERR } else { FLOAT(*i as f64 / J) } }
+            (FLOAT(I), INTEGER(j)) => { if j == 0 { ERR } else { FLOAT(I / j as f64) } }
+            (FLOAT(I), FLOAT(J)) => { if J == 0.0 { ERR } else { FLOAT(I / J) } }
+            (_, _) => ERR
+        }
+    }
 }
 
-pub fn evaluate_expression(expr: &Expression) -> Value {
+fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
     match expr {
         Expression::NOTANEXPR => { NOTAVAL }
-        Expression::GROUPING { expr } => { evaluate_expression(expr) }
+        Expression::GROUPING { expr } => { evaluate_expression(expr, scope) }
+        Expression::VAR_ASSIGN { varname, varval } => {
+            let val = evaluate_expression(varval, scope);
+            scope.write(varname, val).clone()
+        }
+        Expression::VAR_RAW { varname } => {
+            scope.read(varname).clone()
+        }
 
         Expression::LITERAL { value } => {
             match &value.ttype {
@@ -119,29 +163,30 @@ pub fn evaluate_expression(expr: &Expression) -> Value {
         }
 
         Expression::UNARY { op, expr } => {
-            let expr = evaluate_expression(expr);
+            let expr = evaluate_expression(expr, scope);
             match op.ttype {
                 TokenType::BANG => { expr.bang_it() }
                 TokenType::MINUS => { expr.minus_it() }
+                TokenType::DOLLAR => { expr.print_it().clone() }
                 _ => { ERR }
             }
         }
 
         Expression::BINARY { lhs, op, rhs } => {
-            let lhs = evaluate_expression(lhs);
-            let rhs = evaluate_expression(rhs);
+            let lhs = evaluate_expression(lhs, scope);
+            let rhs = evaluate_expression(rhs, scope);
 
             match op.ttype {
                 TokenType::MINUS => { lhs.minus_them(rhs) }
                 TokenType::PLUS => { lhs.plus_them(rhs) }
                 TokenType::MUL => { lhs.mul_them(rhs) }
-                // TokenType::DIV => { lhs.div_them(rhs) }
-                //         TokenType::GT => { lhs > rhs }
-                //         TokenType::GTE => { lhs >= rhs }
-                //         TokenType::LT => { lhs < rhs }
-                //         TokenType::LTE => { lhs <= rhs }
-                //         TokenType::EQ => { lhs == rhs }
-                //         TokenType::UNEQ => { lhs != rhs }
+                TokenType::DIV => { lhs.div_them(rhs) }
+                // TokenType::GT => { lhs > rhs }
+                // TokenType::GTE => { lhs >= rhs }
+                // TokenType::LT => { lhs < rhs }
+                // TokenType::LTE => { lhs <= rhs }
+                // TokenType::EQ => { lhs == rhs }
+                // TokenType::UNEQ => { lhs != rhs }
                 _ => { ERR }
             }
         }

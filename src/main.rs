@@ -1,9 +1,9 @@
 use std::env;
 use std::fs::File;
 use std::io::{Read, stdin, stdout, Write};
-
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
+use crate::evaluator::Scope;
 
 mod lexer;
 mod errors;
@@ -28,7 +28,8 @@ fn interpret_file(path: &str) {
     file.read_to_string(&mut content)
         .expect("could not read file contents.");
     let mut es = ErrorScribe::from_termination_policy(STRICT);
-    interpret_instructions(&mut es, content, false);
+    let mut main_scope = Scope::new();
+    interpret_instructions(&mut es, content, &mut main_scope, false);
 }
 
 fn clear_terminal() {
@@ -40,6 +41,7 @@ fn clear_terminal() {
 fn serve_repl() {
     let mut verbose = false;
     let mut es = ErrorScribe::from_termination_policy(PERMISSIVE);
+    let mut main_scope = Scope::new();
     clear_terminal();
     println!("languria REPL - q to quit, dbg to toggle debug mode");
     loop {
@@ -56,11 +58,11 @@ fn serve_repl() {
             verbose = !verbose;
             println!("debug mode {}", if verbose { "ON" } else { "OFF" })
         }
-        interpret_instructions(&mut es, user_input, verbose);
+        interpret_instructions(&mut es, user_input, &mut main_scope, verbose);
     }
 }
 
-fn interpret_instructions(es: &mut ErrorScribe, instructions: String, verbose: bool) {
+fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut Scope, verbose: bool) {
     let mut lexer = lexer::Lexer::from_string(instructions, es);
     let tokens = lexer.produce_tokens();
     if verbose {
@@ -68,16 +70,17 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, verbose: b
         tokens.iter().for_each(|tok| println!("{}", tok));
     }
     let mut parser = parser::Parser::from_tokens(tokens.to_owned(), es);
-    let expr = parser.parse();
-    if es.has_errors() {
+    let exprs = parser.parse();
+    if es.has_errors() || exprs.is_empty() {
         es.clear_errors();
         return;
     }
+    let expr = exprs.first().unwrap();
     if verbose { println!("\nthis is parsed as:\n{}\n", &expr); }
-    let value = evaluator::evaluate_expression(&expr);
+    let value = evaluator::evaluate_expressions(exprs, ms);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {
-        println!("--> {}", &value);
+        println!("\n--> {}", &value);
     }
 }

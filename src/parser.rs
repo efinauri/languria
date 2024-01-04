@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter};
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
-use crate::lexer::TokenType::{BANG, DIV, EQ, FALSE, FLOAT, GT, GTE, INTEGER, LPAREN, LT, LTE, MINUS, MUL, PLUS, RPAREN, STRING, TRUE, UNEQ};
-use crate::parser::Expression::{BINARY, GROUPING, LITERAL, NOTANEXPR, UNARY};
+use crate::lexer::TokenType::*;
+use crate::parser::Expression::*;
 use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug)]
@@ -12,6 +12,8 @@ pub enum Expression {
     UNARY { op: Token, expr: Box<Expression> },
     BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     GROUPING { expr: Box<Expression> },
+    VAR_ASSIGN { varname: String, varval: Box<Expression> },
+    VAR_RAW { varname: String },
     NOTANEXPR,
 }
 
@@ -28,6 +30,10 @@ impl Display for Expression {
             GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)).unwrap(); }
             NOTANEXPR => { let _ = f.write_str("ERR"); }
+            VAR_ASSIGN { varname, varval } =>
+                { f.write_str(&*format!("{}<-{}", varname, varval)).unwrap(); }
+            VAR_RAW { varname } =>
+                { f.write_str(&*format!("?<-{}", varname)).unwrap() }
         }
         Ok(())
     }
@@ -37,7 +43,7 @@ const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
-const UNARY_TOKENS: [TokenType; 2] = [BANG, MINUS];
+const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
@@ -61,8 +67,17 @@ impl Parser<'_> {
         }
     }
 
-    pub fn parse(&mut self) -> Expression { if !self.tokens.is_empty() { self.build_expression() } else {NOTANEXPR}}
+    pub fn parse(&mut self) -> Vec<Expression> {
+        let mut expressions = vec![];
+        if self.tokens.is_empty() { return expressions; }
+        while self.can_consume() {
+            expressions.push(self.build_expression())
+        }
+        expressions
+    }
+
     fn build_expression(&mut self) -> Expression { self.equality() }
+
     fn equality(&mut self) -> Expression {
         let mut expr = self.comparison();
 
@@ -134,15 +149,23 @@ impl Parser<'_> {
                 ErrorType::EXPECTEDLITERAL));
             return NOTANEXPR;
         }
-        return match &self.read_curr().ttype {
+        return match &self.tokens.get(self.counter.get()).unwrap().ttype {
+            IDENTIFIER(str) => {
+                self.counter.step_fwd();
+                let assign = [ASSIGN];
+                if self.next_in(&assign) {
+                    self.counter.step_fwd();
+                    VAR_ASSIGN { varname: str.clone(), varval: Box::new(self.build_expression()) }
+                } else { VAR_RAW { varname: str.clone() } }
+            }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) => {
                 self.counter.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
             }
             LPAREN => {
+                self.counter.step_fwd();
                 let expr = self.build_expression();
                 self.assert_next_is(RPAREN);
-                self.counter.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
             _ => {
