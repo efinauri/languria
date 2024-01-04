@@ -43,9 +43,9 @@ pub enum TokenType {
     NOTATOKEN,
     RETURN,
     QUESTIONMARK,
-    ENUM,
     TRUE,
     FALSE,
+    EOF
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -53,7 +53,6 @@ lazy_static! {
         ("ti", TI),
         ("idx", IDX),
         ("return", RETURN),
-        ("enum", ENUM),
         ("true", TRUE),
         ("false", FALSE)
 ]);
@@ -114,7 +113,7 @@ impl<'a> Lexer<'_> {
             source: s.chars().collect(),
             counter: Counter::new(),
             tokens: vec![],
-            cursor: 0,
+            cursor: 1,
             scribe,
         }
     }
@@ -153,7 +152,7 @@ impl<'a> Lexer<'_> {
                     } else { break; }
                 }
                 '_' => { self.consume(); }
-                _ => break
+                _ => {break}
             }
         }
         if is_float {
@@ -191,6 +190,7 @@ impl<'a> Lexer<'_> {
                 '\n' => {
                     self.scribe.annotate_error(
                         Error::on_line(self.cursor, ErrorType::BADSTRFMT));
+                    self.cursor += 1;
                     return STRING(str);
                 }
                 _ => {
@@ -207,12 +207,11 @@ impl<'a> Lexer<'_> {
 
     pub fn produce_tokens(&mut self) -> &Vec<Token> {
         while self.can_consume() {
-            self.cursor += 1;
             let symbol = self.consume().clone();
             let ttyp = match symbol {
                 ' ' | '\r' | '\t' => continue,
                 '\n' => {
-                    self.cursor = 0;
+                    self.cursor += 1;
                     continue;
                 }
                 ')' => RPAREN,

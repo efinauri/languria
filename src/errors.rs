@@ -52,7 +52,7 @@ pub enum ErrorType {
     UNEXPECTEDCHAR { symbol: char },
     BADSTRFMT,
     NONASCIICHARACTER { symbol: char },
-    EXPECTEDLITERAL,
+    EXPECTEDLITERAL { found: TokenType },
     EXPECTEDTOKEN { ttype: TokenType },
 }
 
@@ -84,7 +84,7 @@ impl Display for Error {
             ErrorType::UNEXPECTEDCHAR { symbol } => format!("unexpected character: {}", symbol),
             ErrorType::BADSTRFMT => String::from("string wasn't closed."),
             ErrorType::NONASCIICHARACTER { symbol } => format!("encountered non-ASCII character: {}", symbol),
-            ErrorType::EXPECTEDLITERAL => String::from("invalid primary expression."),
+            ErrorType::EXPECTEDLITERAL { found } => format!("expected literal, found: {:?}", found),
             ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype)
         };
         f.write_str(&*(self.err_location() + &*msg).red())

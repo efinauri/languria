@@ -146,7 +146,7 @@ impl Parser<'_> {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
                 self.read_prev().line,
-                ErrorType::EXPECTEDLITERAL));
+                ErrorType::EXPECTEDLITERAL {found: EOF}));
             return NOTANEXPR;
         }
         return match &self.tokens.get(self.counter.get()).unwrap().ttype {
@@ -166,12 +166,10 @@ impl Parser<'_> {
                 self.counter.step_fwd();
                 let expr = self.build_expression();
                 self.assert_next_is(RPAREN);
+                self.counter.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
             _ => {
-                self.scribe.annotate_error(Error::on_line(
-                    self.read_curr().line,
-                    ErrorType::EXPECTEDLITERAL));
                 NOTANEXPR
             }
         };
@@ -184,6 +182,7 @@ impl Parser<'_> {
                 ErrorType::EXPECTEDTOKEN { ttype }));
         }
     }
+
     fn next_in(&self, ttypes: &[TokenType]) -> bool {
         self.can_consume() && ttypes.contains(&self.read_curr().ttype)
     }

@@ -8,10 +8,11 @@ use crate::parser::Expression;
 
 pub struct Scope {
     env: HashMap<String, Value>,
+    print_line: usize
 }
 
 impl Scope {
-    pub fn new() -> Scope { Scope { env: Default::default() } }
+    pub fn new() -> Scope { Scope { env: Default::default() , print_line: 0 } }
 
     fn write(&mut self, varname: &String, varval: Value) -> Value {
         self.env.insert(varname.clone(), varval.clone());
@@ -83,8 +84,8 @@ impl Value {
         }
     }
 
-    fn print_it(&self) -> &Value {
-        print!("{}, ", &self);
+    fn print_it(&self, start_new_line: bool) -> &Value {
+        if start_new_line { print!("\n{}", &self); } else { print!(", {}", &self); }
         &self
     }
 
@@ -167,7 +168,11 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
             match op.ttype {
                 TokenType::BANG => { expr.bang_it() }
                 TokenType::MINUS => { expr.minus_it() }
-                TokenType::DOLLAR => { expr.print_it().clone() }
+                TokenType::DOLLAR => {
+                    let print_on_new_line = scope.print_line != op.line;
+                    scope.print_line = op.line;
+                    expr.print_it(print_on_new_line).clone()
+                }
                 _ => { ERR }
             }
         }
