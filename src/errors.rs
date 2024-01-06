@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter};
+use std::io::{stdout, Write};
 use std::process;
+use std::process::exit;
 
 use crate::lexer::TokenType;
 
@@ -16,6 +18,7 @@ pub struct ErrorScribe {
 }
 
 impl ErrorScribe {
+
     pub fn new() -> ErrorScribe {
         ErrorScribe {
             errors: vec![],
@@ -32,7 +35,9 @@ impl ErrorScribe {
 
     pub fn annotate_error(&mut self, e: Error) {
         println!("{}", &e);
+        stdout().flush().unwrap();
         self.errors.push(e);
+        self.enact_termination_policy();
     }
 
     pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
@@ -41,7 +46,7 @@ impl ErrorScribe {
 
     pub fn enact_termination_policy(&self) {
         if self.has_errors() && self.termination_policy == TerminationPolicy::STRICT {
-            process::exit(0)
+            exit(1)
         }
     }
 }
@@ -54,6 +59,8 @@ pub enum ErrorType {
     NONASCIICHARACTER { symbol: char },
     EXPECTEDLITERAL { found: TokenType },
     EXPECTEDTOKEN { ttype: TokenType },
+    EXPECTEDTYPE,
+    BADASSIGNMENTLHS,
 }
 
 #[derive(Debug)]
@@ -85,7 +92,9 @@ impl Display for Error {
             ErrorType::BADSTRFMT => String::from("string wasn't closed."),
             ErrorType::NONASCIICHARACTER { symbol } => format!("encountered non-ASCII character: {}", symbol),
             ErrorType::EXPECTEDLITERAL { found } => format!("expected literal, found: {:?}", found),
-            ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype)
+            ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype),
+            ErrorType::EXPECTEDTYPE => String::from("attempting to change the variable type without using 'into'"),
+            ErrorType::BADASSIGNMENTLHS => String::from("only identifiers can be assigned values.")
         };
         f.write_str(&*(self.err_location() + &*msg).red())
     }

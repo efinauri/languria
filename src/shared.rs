@@ -1,7 +1,7 @@
 use std::ops::Index;
 #[derive(Debug)]
 pub struct Counter {
-    acc: usize,
+    pub acc: usize,
 }
 
 impl Counter {
@@ -22,6 +22,7 @@ pub trait WalksCollection<'a, V: 'a, I: 'a>
     fn mut_cnt(&mut self) -> &mut Counter;
     fn arr(&self) -> &V;
     fn peek(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() + amount] }
+    fn peek_back(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() - amount] }
     fn read_prev(&'a self) -> &I {&self.arr()[self.cnt().get() - 1] }
     fn read_curr(&'a self) -> &I { self.peek(0) }
     fn read_next(&'a self) -> &I { self.peek(1) }

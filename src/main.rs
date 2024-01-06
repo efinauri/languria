@@ -91,7 +91,7 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut S
     }
     let expr = exprs.first().unwrap();
     if verbose { println!("\nthis is parsed as:\n{}\n", &expr); }
-    let value = evaluator::evaluate_expressions(exprs, ms);
+    let value = evaluator::evaluate_expressions(exprs, ms, es);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {

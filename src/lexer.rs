@@ -13,33 +13,45 @@ use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
+    //print
     DOLLAR,
+    //application
     AT,
+    //comparison
     GT,
     LT,
     GTE,
     LTE,
     EQ,
     UNEQ,
+    //grouping
     LPAREN,
     RPAREN,
     LBRACE,
     RBRACE,
+    // binary ops
     MINUS,
     PLUS,
     DIV,
     MUL,
+    // primitive types
     IDENTIFIER(String),
     STRING(String),
     INTEGER(i32),
     FLOAT(f64),
+    // primitive literals
     IT,
     TI,
     IDX,
+    // assign
+    ASSIGN,
+    MAXASSIGN,
+    MINASSIGN,
+    INTO,
+
     COMMA,
     DOT,
     BANG,
-    ASSIGN,
     NOTATOKEN,
     RETURN,
     QUESTIONMARK,
@@ -55,7 +67,8 @@ lazy_static! {
         ("idx", IDX),
         ("return", RETURN),
         ("true", TRUE),
-        ("false", FALSE)
+        ("false", FALSE),
+        ("into", INTO)
 ]);
 }
 
@@ -250,7 +263,12 @@ impl<'a> Lexer<'_> {
                 } else { DIV },
                 '$' => if self.consume_next_if_eq('$') { EOLPRINT } else { DOLLAR }
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
-                '=' => if self.consume_next_if_eq('=') { EQ } else { ASSIGN }
+                '=' => {
+                    if self.consume_next_if_eq('=') { EQ }
+                        else if self.consume_next_if_eq('>') { MAXASSIGN }
+                        else if self.consume_next_if_eq('<') { MINASSIGN }
+                        else { ASSIGN }
+                }
                 '<' => if self.consume_next_if_eq('=') { LTE } else { LT }
                 '>' => if self.consume_next_if_eq('=') { GTE } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }

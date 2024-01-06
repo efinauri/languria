@@ -1,21 +1,25 @@
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::{Display, Formatter};
 use std::ops::Neg;
 
+use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, NOTAVAL, STRING};
-use crate::lexer::TokenType;
+use crate::lexer::{Token, TokenType};
+use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 use crate::parser::Expression::{LITERAL, VAR_RAW};
 
 pub struct Scope {
     env: HashMap<String, Value>,
-    print_line: usize,
+    curr_line: usize,
+    last_print_line: usize,
     entry_point: String,
 }
 
 impl Scope {
-    pub fn reset_print(&mut self) { self.print_line = 0; }
+    pub fn reset_print(&mut self) { self.last_print_line = 0; }
 }
 
 impl Scope {
@@ -28,14 +32,26 @@ impl Scope {
     pub fn new() -> Scope {
         Scope {
             env: Default::default(),
-            print_line: 0,
+            curr_line: 0,
+            last_print_line: 0,
             entry_point: String::from("REPL"),
         }
     }
 
-    fn write(&mut self, varname: &String, varval: Value) -> Value {
-        self.env.insert(varname.clone(), varval.clone());
-        varval.clone()
+    fn write(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
+        let old_val = self.read(varname);
+        if !op.type_equals(&INTO) && old_val != ERR && !old_val.type_equals(&varval) {
+            scribe.annotate_error(Error::on_line(self.curr_line, ErrorType::EXPECTEDTYPE));
+            return ERR;
+        }
+        let val_to_save = match op.ttype {
+            ASSIGN => { varval.clone() }
+            MINASSIGN => { varval.min_them(old_val) }
+            MAXASSIGN => { varval.max_them(old_val) }
+            _ => { NOTAVAL }
+        };
+        self.env.insert(varname.clone(), val_to_save.clone());
+        val_to_save
     }
 
     fn read(&self, varname: &String) -> Value {
@@ -45,10 +61,10 @@ impl Scope {
     }
 }
 
-pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope) -> Value {
+pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope, es: &mut ErrorScribe) -> Value {
     let mut ret = ERR;
     for expr in exprs {
-        let eval = evaluate_expression(&expr, x);
+        let eval = evaluate_expression(&expr, x, es);
         if eval != NOTAVAL { ret = eval; }
     }
     ret
@@ -64,6 +80,20 @@ pub enum Value {
     BOOLEAN(bool),
     ERR,
     NOTAVAL,
+}
+
+impl Value {
+    pub(crate) fn type_equals(&self, other: &Value) -> bool {
+        match (self, other) {
+            (INTEGER(_), INTEGER(_)) |
+            (FLOAT(_), FLOAT(_)) |
+            (STRING(_), STRING(_)) |
+            (BOOLEAN(_), BOOLEAN(_)) |
+            (ERR, ERR) |
+            (NOTAVAL, NOTAVAL) => { true }
+            (_, _) => false
+        }
+    }
 }
 
 impl Display for Value {
@@ -88,8 +118,8 @@ fn num_as_bool(v: &Value) -> Value {
 }
 
 fn print_eol(scope: &mut Scope, line: &usize) -> Value {
-    let start_new_line = scope.print_line != *line;
-    scope.print_line = *line;
+    let start_new_line = scope.last_print_line != *line;
+    scope.last_print_line = *line;
     let to_print = format!("[{}:{}]", scope.entry_point, line);
     if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
     NOTAVAL
@@ -130,8 +160,8 @@ impl Value {
             }
             _ => String::new()
         };
-        let start_new_line = scope.print_line != curr_line;
-        scope.print_line = curr_line;
+        let start_new_line = scope.last_print_line != curr_line;
+        scope.last_print_line = curr_line;
         if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
         &self
     }
@@ -185,15 +215,29 @@ impl Value {
             (_, _) => ERR
         }
     }
+
+    fn min_them(&self, other: Value) -> Value {
+        match (self, other) {
+            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(min(*i, j)) } }
+            (_, _) => ERR
+        }
+    }
+
+    fn max_them(&self, other: Value) -> Value {
+        match (self, other) {
+            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(max(*i, j)) } }
+            (_, _) => ERR
+        }
+    }
 }
 
-fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
+fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
         Expression::NOTANEXPR => { NOTAVAL }
-        Expression::GROUPING { expr } => { evaluate_expression(expr, scope) }
-        Expression::VAR_ASSIGN { varname, varval } => {
-            let val = evaluate_expression(varval, scope);
-            scope.write(varname, val).clone()
+        Expression::GROUPING { expr } => { evaluate_expression(expr, scope, scribe) }
+        Expression::VAR_ASSIGN { varname, op, varval } => {
+            let val = evaluate_expression(varval, scope, scribe);
+            scope.write(varname, val, op, scribe).clone()
         }
         VAR_RAW { varname } => {
             scope.read(varname).clone()
@@ -212,7 +256,7 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
         }
 
         Expression::UNARY { op, expr } => {
-            let expr = evaluate_expression(expr, scope);
+            let expr = evaluate_expression(expr, scope, scribe);
             match op.ttype {
                 TokenType::BANG => { expr.bang_it() }
                 TokenType::MINUS => { expr.minus_it() }
@@ -224,8 +268,8 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
         }
 
         Expression::BINARY { lhs, op, rhs } => {
-            let elhs = evaluate_expression(lhs, scope);
-            let erhs = evaluate_expression(rhs, scope);
+            let elhs = evaluate_expression(lhs, scope, scribe);
+            let erhs = evaluate_expression(rhs, scope, scribe);
 
             match op.ttype {
                 TokenType::DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }

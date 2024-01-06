@@ -12,11 +12,25 @@ pub enum Expression {
     UNARY { op: Token, expr: Box<Expression> },
     BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     GROUPING { expr: Box<Expression> },
-    VAR_ASSIGN { varname: String, varval: Box<Expression> },
+    VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
     NOTANEXPR,
 }
 
+impl Expression {
+    fn type_equals(&self, other: &Expression) -> bool {
+        match (self, other) {
+            (LITERAL { value: _ }, LITERAL { value: _ }) |
+            (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
+            (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
+            (GROUPING { expr: _ }, GROUPING { expr: _ }) |
+            (VAR_ASSIGN { varname: _, op: _, varval: _ }, VAR_ASSIGN { varname: _, op: _, varval: _ }) |
+            (VAR_RAW { varname: _ }, VAR_RAW{ varname: _ }) |
+            (NOTANEXPR, NOTANEXPR) => true,
+            _ => false
+        }
+    }
+}
 
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -30,7 +44,7 @@ impl Display for Expression {
             GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)).unwrap(); }
             NOTANEXPR => { let _ = f.write_str("ERR"); }
-            VAR_ASSIGN { varname, varval } =>
+            VAR_ASSIGN { varname, op, varval } =>
                 { f.write_str(&*format!("{}<-{}", varname, varval)).unwrap(); }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)).unwrap() }
@@ -39,6 +53,7 @@ impl Display for Expression {
     }
 }
 
+const ASSIGN_TOKENS: [TokenType; 4] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
@@ -60,11 +75,7 @@ impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
 
 impl Parser<'_> {
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser {
-            tokens,
-            counter: Counter::new(),
-            scribe,
-        }
+        Parser { tokens, counter: Counter::new(), scribe, }
     }
 
     pub fn parse(&mut self) -> Vec<Expression> {
@@ -76,12 +87,33 @@ impl Parser<'_> {
         expressions
     }
 
-    fn build_expression(&mut self) -> Expression { self.equality() }
+    fn build_expression(&mut self) -> Expression { self.assignment() }
+
+    fn assignment(&mut self) -> Expression {
+        let mut expr = self.equality();
+        if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
+            self.counter.step_fwd();
+            expr = match &self.peek_back(2).ttype {
+                IDENTIFIER(str) => {
+                    VAR_ASSIGN {
+                        varname: str.clone(),
+                        op: self.read_prev().clone(),
+                        varval: Box::new(self.build_expression()) }
+                }
+                _ => {
+                    self.scribe.annotate_error(Error::on_line(self.read_curr().line,
+                                                              ErrorType::BADASSIGNMENTLHS));
+                    NOTANEXPR
+                }
+            };
+        }
+        expr
+    }
 
     fn equality(&mut self) -> Expression {
         let mut expr = self.comparison();
 
-        while self.next_in(&EQ_TOKENS) {
+        while self.curr_in(&EQ_TOKENS) {
             self.counter.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
@@ -95,13 +127,14 @@ impl Parser<'_> {
 
     fn comparison(&mut self) -> Expression {
         let mut expr = self.term();
-        while self.next_in(&CMP_TOKENS) {
+        while self.curr_in(&CMP_TOKENS) {
             self.counter.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
                 rhs: Box::new(self.term()),
-            }
+            };
+
         }
         expr
     }
@@ -109,13 +142,14 @@ impl Parser<'_> {
     fn term(&mut self) -> Expression {
         let mut expr = self.factor();
 
-        while self.next_in(&MATH_LO_PRIORITY_TOKENS) {
+        while self.curr_in(&MATH_LO_PRIORITY_TOKENS) {
             self.counter.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
                 rhs: Box::new(self.factor()),
-            }
+            };
+
         }
         expr
     }
@@ -123,20 +157,19 @@ impl Parser<'_> {
     fn factor(&mut self) -> Expression {
         let mut expr = self.unary();
 
-        while self.next_in(&MATH_HI_PRIORITY_TOKENS) {
+        while self.curr_in(&MATH_HI_PRIORITY_TOKENS) {
             self.counter.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
                 rhs: Box::new(self.unary()),
-            }
+            };
         }
         expr
     }
 
     fn unary(&mut self) -> Expression {
-        if self.next_in(&UNARY_TOKENS) {
-            self.counter.step_fwd();
+        if self.curr_in(&UNARY_TOKENS) {
             let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
             if self.curr_is_seq(&seq) {
                 let op = self.read_prev().clone();
@@ -145,6 +178,7 @@ impl Parser<'_> {
                 self.counter.mov(2);
                 return BINARY { op: op, rhs: Box::new(LITERAL { value }), lhs: Box::new(self.unary()) };
             }
+            self.counter.step_fwd();
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
         }
         self.primary()
@@ -153,19 +187,14 @@ impl Parser<'_> {
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
-                self.read_prev().line,
+                self.read_curr().line,
                 ErrorType::EXPECTEDLITERAL { found: EOF }));
             return NOTANEXPR;
         }
         return match &self.tokens.get(self.counter.get()).unwrap().ttype {
             IDENTIFIER(str) => {
                 self.counter.step_fwd();
-                let assign = [ASSIGN];
-                if self.next_in(&assign) {
-                    self.counter.step_fwd();
-                    VAR_ASSIGN { varname: str.clone(), varval: Box::new(self.build_expression()) }
-                } else { VAR_RAW { varname: str.clone() } }
-            }
+                VAR_RAW { varname: str.clone() } }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.counter.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
@@ -177,9 +206,7 @@ impl Parser<'_> {
                 self.counter.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
-            _ => {
-                NOTANEXPR
-            }
+            _ => { NOTANEXPR }
         };
     }
 
@@ -201,6 +228,10 @@ impl Parser<'_> {
     }
 
     fn next_in(&self, ttypes: &[TokenType]) -> bool {
+        self.can_consume() && ttypes.contains(&self.read_next().ttype)
+    }
+
+    fn curr_in(&self, ttypes: &[TokenType]) -> bool {
         self.can_consume() && ttypes.contains(&self.read_curr().ttype)
     }
 }
