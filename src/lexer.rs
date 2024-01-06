@@ -172,6 +172,15 @@ impl<'a> Lexer<'_> {
         }
     }
 
+    fn skip_comment(&mut self) {
+        while self.can_consume() {
+            match self.peek_or_err(0) {
+                '\n' => { break; }
+                _ => { self.consume(); }
+            }
+        }
+    }
+
     fn consume_alphabet(&mut self, starting_symbol: char) -> TokenType {
         let mut str = String::from(starting_symbol);
         while self.can_consume() {
@@ -233,9 +242,12 @@ impl<'a> Lexer<'_> {
                 '-' => MINUS,
                 '+' => PLUS,
                 '*' => MUL,
-                '/' => DIV,
                 '?' => QUESTIONMARK,
                 '@' => AT,
+                '/' => if self.consume_next_if_eq('/') {
+                    self.skip_comment();
+                    continue;
+                } else { DIV },
                 '$' => if self.consume_next_if_eq('$') { EOLPRINT } else { DOLLAR }
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
                 '=' => if self.consume_next_if_eq('=') { EQ } else { ASSIGN }
