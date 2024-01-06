@@ -17,11 +17,11 @@ Multiple `$` on the same line are printed separated by a comma, in the order in 
 
     $math = $(3*3) + $(4*4)  
     // clearly, the assignment is the last thing to be evaluated, so the last thing fed to STDIN will be 25.
-    // However there's no good reason to expect that this whole line will print "9, 16, 25" as opposed to "16, 9, 25".
+    // However there's no good reason to expect that this whole line will print "9 16 25" as opposed to "16 9 25".
 
 To remedy this, you can also tag any of your print statements as such.
     
-    $math = $<a>(3*3) + $<b>(4*4)  // prints "a: 9, b: 16, 25"
+    $math = $<a>(3*3) + $<b>(4*4)  // prints "a: 9 b: 16 25"
 
 `$$` prints the current location of the line.
 
