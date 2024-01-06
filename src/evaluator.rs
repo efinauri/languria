@@ -39,19 +39,21 @@ impl Scope {
     }
 
     fn write(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
-        let old_val = self.read(varname);
-        if !op.type_equals(&INTO) && old_val != ERR && !old_val.type_equals(&varval) {
+        let mut old_val = &self.read(varname);
+        if !op.type_equals(&INTO) && old_val != &ERR && !old_val.type_equals(&varval) {
             scribe.annotate_error(Error::on_line(self.curr_line, ErrorType::EXPECTEDTYPE));
             return ERR;
+        } else {
+            old_val = &varval;
         }
         let val_to_save = match op.ttype {
-            ASSIGN => { varval.clone() }
+            ASSIGN => { varval }
             MINASSIGN => { varval.min_them(old_val) }
             MAXASSIGN => { varval.max_them(old_val) }
             _ => { NOTAVAL }
         };
         self.env.insert(varname.clone(), val_to_save.clone());
-        val_to_save
+        val_to_save.clone()
     }
 
     fn read(&self, varname: &String) -> Value {
@@ -166,66 +168,66 @@ impl Value {
         &self
     }
 
-    fn minus_them(&self, other: Value) -> Value {
+    fn minus_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGER(i), INTEGER(j)) => { INTEGER(i - j) }
             (INTEGER(i), FLOAT(J)) => { FLOAT(*i as f64 - J) }
-            (FLOAT(I), INTEGER(j)) => { FLOAT(I - j as f64) }
+            (FLOAT(I), INTEGER(j)) => { FLOAT(I - *j as f64) }
             (FLOAT(I), FLOAT(J)) => { FLOAT(I - J) }
             (_, _) => ERR
         }
     }
 
-    fn plus_them(&self, other: Value) -> Value {
+    fn plus_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGER(i), INTEGER(j)) => { INTEGER(i + j) }
             (INTEGER(i), FLOAT(J)) => { FLOAT(*i as f64 + J) }
-            (FLOAT(I), INTEGER(j)) => { FLOAT(I + j as f64) }
+            (FLOAT(I), INTEGER(j)) => { FLOAT(I + *j as f64) }
             (FLOAT(I), FLOAT(J)) => { FLOAT(I + J) }
             (STRING(s1), STRING(s2)) => { STRING(format!("{}{}", s1, s2)) }
             (_, _) => ERR
         }
     }
 
-    fn mul_them(&self, other: Value) -> Value {
+    fn mul_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGER(i), INTEGER(j)) => { INTEGER(i * j) }
             (INTEGER(i), FLOAT(J)) => { FLOAT(*i as f64 * J) }
-            (FLOAT(I), INTEGER(j)) => { FLOAT(I * j as f64) }
+            (FLOAT(I), INTEGER(j)) => { FLOAT(I * *j as f64) }
             (FLOAT(I), FLOAT(J)) => { FLOAT(I * J) }
             // bool*num
-            (INTEGER(i), BOOLEAN(boo)) => { INTEGER(if boo { *i } else { 0 }) }
-            (BOOLEAN(boo), INTEGER(j)) => { INTEGER(if *boo { j } else { 0 }) }
-            (FLOAT(I), BOOLEAN(boo)) => { FLOAT(if boo { *I } else { 0.0 }) }
-            (BOOLEAN(boo), FLOAT(J)) => { FLOAT(if *boo { J } else { 0.0 }) }
+            (INTEGER(i), BOOLEAN(boo)) => { INTEGER(if *boo { *i } else { 0 }) }
+            (BOOLEAN(boo), INTEGER(j)) => { INTEGER(if *boo { *j } else { 0 }) }
+            (FLOAT(I), BOOLEAN(boo)) => { FLOAT(if *boo { *I } else { 0.0 }) }
+            (BOOLEAN(boo), FLOAT(J)) => { FLOAT(if *boo { *J } else { 0.0 }) }
             // strings
             (INTEGER(i), STRING(s)) => { STRING(s.repeat(*i as usize)) }
-            (STRING(s), INTEGER(j)) => { STRING(s.repeat(j as usize)) }
+            (STRING(s), INTEGER(j)) => { STRING(s.repeat(*j as usize)) }
             (STRING(s1), STRING(s2)) => { STRING(format!("{}{}", s1, s2)) }
             (_, _) => ERR
         }
     }
 
-    fn div_them(&self, other: Value) -> Value {
+    fn div_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(i / j) } }
-            (INTEGER(i), FLOAT(J)) => { if J == 0.0 { ERR } else { FLOAT(*i as f64 / J) } }
-            (FLOAT(I), INTEGER(j)) => { if j == 0 { ERR } else { FLOAT(I / j as f64) } }
-            (FLOAT(I), FLOAT(J)) => { if J == 0.0 { ERR } else { FLOAT(I / J) } }
+            (INTEGER(i), INTEGER(j)) => { if *j == 0 { ERR } else { INTEGER(*i / *j) } }
+            (INTEGER(i), FLOAT(J)) => { if *J == 0.0 { ERR } else { FLOAT(*i as f64 / *J) } }
+            (FLOAT(I), INTEGER(j)) => { if *j == 0 { ERR } else { FLOAT(*I / *j as f64) } }
+            (FLOAT(I), FLOAT(J)) => { if *J == 0.0 { ERR } else { FLOAT(*I / *J) } }
             (_, _) => ERR
         }
     }
 
-    fn min_them(&self, other: Value) -> Value {
+    fn min_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(min(*i, j)) } }
+            (INTEGER(i), INTEGER(j)) => { if *j == 0 { ERR } else { INTEGER(min(*i, *j)) } }
             (_, _) => ERR
         }
     }
 
-    fn max_them(&self, other: Value) -> Value {
+    fn max_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGER(i), INTEGER(j)) => { if j == 0 { ERR } else { INTEGER(max(*i, j)) } }
+            (INTEGER(i), INTEGER(j)) => { if *j == 0 { ERR } else { INTEGER(max(*i, *j)) } }
             (_, _) => ERR
         }
     }
@@ -273,10 +275,10 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
 
             match op.ttype {
                 TokenType::DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }
-                TokenType::MINUS => { elhs.minus_them(erhs) }
-                TokenType::PLUS => { elhs.plus_them(erhs) }
-                TokenType::MUL => { elhs.mul_them(erhs) }
-                TokenType::DIV => { elhs.div_them(erhs) }
+                TokenType::MINUS => { elhs.minus_them(&erhs) }
+                TokenType::PLUS => { elhs.plus_them(&erhs) }
+                TokenType::MUL => { elhs.mul_them(&erhs) }
+                TokenType::DIV => { elhs.div_them(&erhs) }
                 // TokenType::GT => { lhs > rhs }
                 // TokenType::GTE => { lhs >= rhs }
                 // TokenType::LT => { lhs < rhs }
