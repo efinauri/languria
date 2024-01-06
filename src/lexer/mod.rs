@@ -1,3 +1,5 @@
+mod tests;
+
 use std::clone::Clone;
 use std::collections::HashMap;
 use std::fmt;
@@ -9,14 +11,10 @@ use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::TokenType::*;
-use crate::shared::{Counter, WalksCollection};
+use crate::shared::{Cursor, WalksCollection};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
-    //print
-    DOLLAR,
-    //application
-    AT,
     //comparison
     GT,
     LT,
@@ -34,31 +32,34 @@ pub enum TokenType {
     PLUS,
     DIV,
     MUL,
+    // unary ops
+    DOLLAR,
+    BANG,
     // primitive types
     IDENTIFIER(String),
     STRING(String),
     INTEGER(i32),
     FLOAT(f64),
-    // primitive literals
+    // primitive literals and values
     IT,
     TI,
     IDX,
+    TRUE,
+    FALSE,
+    EOLPRINT,
+    RETURN,
     // assign
     ASSIGN,
     MAXASSIGN,
     MINASSIGN,
     INTO,
-
+    // others
+    AT,
     COMMA,
     DOT,
-    BANG,
     NOTATOKEN,
-    RETURN,
     QUESTIONMARK,
-    TRUE,
-    FALSE,
     EOF,
-    EOLPRINT,
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -81,6 +82,11 @@ pub struct Token {
 
 
 impl Token {
+    #[allow(dead_code)]
+    pub fn debug(ttype: TokenType) -> Token {
+        Token { ttype, line: 0 }
+    }
+
     fn new(ttype: TokenType, line: usize) -> Token {
         Token {
             ttype,
@@ -109,42 +115,36 @@ impl Debug for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(self.to_string().as_str()) }
 }
 
-#[derive(Debug)]
 pub struct Lexer<'a> {
     source: Vec<char>,
     tokens: Vec<Token>,
-    cursor: usize,
-    counter: Counter,
+    line_number: usize,
+    cursor: Cursor,
     scribe: &'a mut ErrorScribe,
 }
 
 impl WalksCollection<'_, Vec<char>, char> for Lexer<'_> {
-    fn cnt(&self) -> &Counter { &self.counter }
-    fn mut_cnt(&mut self) -> &mut Counter { &mut self.counter }
+    fn cnt(&self) -> &Cursor { &self.cursor }
+    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.cursor }
     fn arr(&self) -> &Vec<char> { &self.source }
+}
+
+impl Debug for Lexer<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&*format!("source: {:?}\nc: {}, line: {}\ntoks: {:?}",
+                              self.source, self.cursor, self.line_number, self.tokens))
+    }
 }
 
 impl<'a> Lexer<'_> {
     pub fn from_string(s: String, scribe: &mut ErrorScribe) -> Lexer {
         Lexer {
             source: s.chars().collect(),
-            counter: Counter::new(),
+            cursor: Cursor::new(),
             tokens: vec![],
-            cursor: 1,
+            line_number: 1,
             scribe,
         }
-    }
-
-    fn peek_or_err(&mut self, amount: usize) -> char {
-        let result = self.peek(amount).clone();
-        if !result.is_ascii() {
-            self.counter.mov(result.len_utf8() as i32);
-            self.scribe.annotate_error(
-                Error::on_line(self.cursor, ErrorType::NONASCIICHARACTER {
-                    symbol: result
-                }))
-        }
-        result
     }
 
     fn consume_next_if_eq(&mut self, other: char) -> bool {
@@ -159,16 +159,23 @@ impl<'a> Lexer<'_> {
         let mut str = String::from(starting_digit);
         let mut is_float = false;
         while self.can_consume() {
-            let peeked = self.peek_or_err(0);
+            let peeked = self.read_curr();
             match peeked {
                 '0'..='9' => { str.push(self.consume().clone()); }
                 '.' => {
-                    if !is_float && ('0'..='9').contains(&self.peek_or_err(1)) {
+                    if !is_float && ('0'..='9').contains(&self.read_next()) {
                         str.push(self.consume().clone());
                         is_float = true;
                     } else { break; }
                 }
                 '_' => { self.consume(); }
+                'a'..='z'| 'A'..='z' => {
+                    self.scribe.annotate_error(Error::on_line(
+                        self.line_number,
+                        ErrorType::LEXER_UNEXPECTED_SYMBOL {symbol: peeked.clone() }
+                    ));
+                    return NOTATOKEN;
+                }
                 _ => { break; }
             }
         }
@@ -181,7 +188,7 @@ impl<'a> Lexer<'_> {
 
     fn skip_comment(&mut self) {
         while self.can_consume() {
-            match self.peek_or_err(0) {
+            match self.read_curr() {
                 '\n' => { break; }
                 _ => { self.consume(); }
             }
@@ -191,7 +198,7 @@ impl<'a> Lexer<'_> {
     fn consume_alphabet(&mut self, starting_symbol: char) -> TokenType {
         let mut str = String::from(starting_symbol);
         while self.can_consume() {
-            let peeked = self.peek_or_err(0);
+            let peeked = self.read_curr();
             match peeked {
                 'a'..='z' | 'A'..='Z' | '_' => { str.push(self.consume().clone()); }
                 _ => { break; }
@@ -215,14 +222,14 @@ impl<'a> Lexer<'_> {
                 }
                 '\n' => {
                     self.scribe.annotate_error(
-                        Error::on_line(self.cursor, ErrorType::BADSTRFMT));
-                    self.cursor += 1;
+                        Error::on_line(self.line_number, ErrorType::LEXER_BAD_STR_FMT));
+                    self.line_number += 1;
                     return STRING(str);
                 }
                 _ => {
                     if !self.can_consume() {
                         self.scribe.annotate_error(
-                            Error::on_line(self.cursor, ErrorType::BADSTRFMT));
+                            Error::on_line(self.line_number, ErrorType::LEXER_BAD_STR_FMT));
                     }
                 }
             }
@@ -237,7 +244,7 @@ impl<'a> Lexer<'_> {
             let ttyp = match symbol {
                 ' ' | '\r' | '\t' => continue,
                 '\n' => {
-                    self.cursor += 1;
+                    self.line_number += 1;
                     continue;
                 }
                 ')' => RPAREN,
@@ -270,11 +277,11 @@ impl<'a> Lexer<'_> {
                 'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
-                        Error::on_line(self.cursor, ErrorType::UNEXPECTEDCHAR { symbol }));
+                        Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol }));
                     NOTATOKEN
                 }
             };
-            self.tokens.push(Token::new(ttyp, self.cursor));
+            self.tokens.push(Token::new(ttyp, self.line_number));
         }
         self.scribe.enact_termination_policy();
         if self.tokens.iter()
@@ -283,97 +290,5 @@ impl<'a> Lexer<'_> {
             self.tokens = vec![];
         }
         &self.tokens
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    //TODO more comprehensive test cases
-    // - non unicode chars
-    use crate::errors::ErrorScribe;
-    use crate::lexer::Lexer;
-    use crate::lexer::TokenType::*;
-    use crate::shared::WalksCollection;
-
-    #[test]
-    fn consume() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("="), &mut es);
-        assert_eq!(l.can_consume(), true);
-        l.counter.step_fwd();
-        assert_eq!(l.can_consume(), false);
-    }
-
-    #[test]
-    fn consume_next_if_eq() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("12"), &mut es);
-        assert_eq!(l.consume_next_if_eq('6'), false);
-        assert_eq!(l.consume_next_if_eq('1'), true);
-        dbg!(&l);
-        assert_eq!(*l.consume(), '2');
-        assert_eq!(l.consume_next_if_eq('?'), false);
-    }
-
-    #[test]
-    fn consume_str() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from(r#""hello, \"dude\"!""#), &mut es);
-        l.counter.step_fwd();
-        let tt = l.consume_str('"');
-        let str = match tt {
-            STRING(str) => str,
-            _ => { panic!("test failed") }
-        };
-        dbg!(&str);
-        assert_eq!(str.eq("hello, \"dude\"!"), true);
-    }
-
-    #[test]
-    fn consume_int() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("000_123_456"), &mut es);
-        let tt = l.consume_num('0');
-        let int = match tt {
-            INTEGER(int) => int,
-            _ => { panic!("test failed") }
-        };
-        dbg!(int);
-        assert_eq!(int, 123456);
-    }
-
-    #[test]
-    fn consume_float() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from(".28"), &mut es);
-        let tt = l.consume_num('0');
-        let flt = match tt {
-            FLOAT(flt) => flt,
-            _ => { panic!("test failed") }
-        };
-        dbg!(flt);
-        assert_eq!(flt - 0.28 < 0.001, true);
-
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("345.double()"), &mut es);
-        let tt = l.consume_num('2');
-        let int = match tt {
-            INTEGER(int) => int,
-            _ => { panic!("test failed") }
-        };
-        dbg!(int);
-        assert_eq!(2345, int);
-    }
-
-    #[test]
-    fn consume_alphabet() {
-        let mut es = ErrorScribe::new();
-        let mut l = Lexer::from_string(String::from("t bob"), &mut es);
-        let tt = l.consume_alphabet('i');
-        assert_eq!(tt, IT);
-        l.counter.mov(2);
-        let tt = l.consume_alphabet('b');
-        assert_eq!(tt, IDENTIFIER("bob".parse().unwrap()));
     }
 }

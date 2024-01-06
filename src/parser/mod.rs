@@ -4,7 +4,7 @@ use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
-use crate::shared::{Counter, WalksCollection};
+use crate::shared::{Cursor, WalksCollection};
 
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
@@ -48,20 +48,20 @@ const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
-    counter: Counter,
+    counter: Cursor,
     scribe: &'a mut ErrorScribe,
 }
 
 impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
-    fn cnt(&self) -> &Counter { &self.counter }
-    fn mut_cnt(&mut self) -> &mut Counter { &mut self.counter }
+    fn cnt(&self) -> &Cursor { &self.counter }
+    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.counter }
     fn arr(&self) -> &Vec<Token> { &self.tokens }
 }
 
 
 impl Parser<'_> {
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser { tokens, counter: Counter::new(), scribe, }
+        Parser { tokens, counter: Cursor::new(), scribe, }
     }
 
     pub fn parse(&mut self) -> Vec<Expression> {
@@ -228,10 +228,10 @@ mod tests {
 
     #[test]
     fn print_tree() {
-        let mul = Token::from_debug(MUL);
-        let four = Token::from_debug(INTEGER(4));
-        let six_point_two = Token::from_debug(FLOAT(6.2));
-        let minus = Token::from_debug(MINUS);
+        let mul = Token::debug(MUL);
+        let four = Token::debug(INTEGER(4));
+        let six_point_two = Token::debug(FLOAT(6.2));
+        let minus = Token::debug(MINUS);
 
         let e = BINARY {
             lhs: Box::from(UNARY {

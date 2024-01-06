@@ -13,7 +13,6 @@ mod parser;
 mod shared;
 mod evaluator;
 
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     match args.len() {

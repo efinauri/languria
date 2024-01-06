@@ -1,13 +1,19 @@
+use std::fmt::{Display, Formatter};
 use std::ops::Index;
-#[derive(Debug)]
-pub struct Counter {
-    pub acc: usize,
+pub struct Cursor {
+    pub val: usize,
 }
 
-impl Counter {
-    pub fn new() -> Counter { Counter { acc: 0 } }
-    pub fn get(&self) -> usize { self.acc }
-    pub fn mov(&mut self, steps: i32) { self.acc += steps as usize }
+impl Display for Cursor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&*format!("{}", self.val))
+    }
+}
+
+impl Cursor {
+    pub fn new() -> Cursor { Cursor { val: 0 } }
+    pub fn get(&self) -> usize { self.val }
+    pub fn mov(&mut self, steps: i32) { self.val += steps as usize }
     pub fn step_fwd(&mut self) { self.mov(1) }
 }
 
@@ -18,8 +24,8 @@ impl<T> HasLength for Vec<T> { fn length(&self) -> usize { self.len() } }
 pub trait WalksCollection<'a, V: 'a, I: 'a>
     where V: FromIterator<I> + Index<usize, Output=I> + HasLength,
           I: Clone + PartialEq {
-    fn cnt(&self) -> &Counter;
-    fn mut_cnt(&mut self) -> &mut Counter;
+    fn cnt(&self) -> &Cursor;
+    fn mut_cnt(&mut self) -> &mut Cursor;
     fn arr(&self) -> &V;
     fn peek(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() + amount] }
     fn peek_back(&'a self, amount: usize) -> &I { &self.arr()[self.cnt().get() - amount] }
@@ -36,22 +42,22 @@ pub trait WalksCollection<'a, V: 'a, I: 'a>
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::{Counter, WalksCollection};
+    use crate::shared::{Cursor, WalksCollection};
 
     struct TestVec {
         v: Vec<char>,
-        c: Counter,
+        c: Cursor,
     }
 
     impl TestVec {
-        fn from_str(str: &String) -> TestVec { TestVec { v: str.chars().collect(), c: Counter::new() } }
+        fn from_str(str: &String) -> TestVec { TestVec { v: str.chars().collect(), c: Cursor::new() } }
     }
     impl WalksCollection<'_, Vec<char>, char> for TestVec{
-        fn cnt(&self) -> &Counter {
+        fn cnt(&self) -> &Cursor {
             &self.c
         }
 
-        fn mut_cnt(&mut self) -> &mut Counter {
+        fn mut_cnt(&mut self) -> &mut Cursor {
             &mut self.c
         }
 

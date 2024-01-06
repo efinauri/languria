@@ -17,6 +17,14 @@ pub struct ErrorScribe {
 }
 
 impl ErrorScribe {
+    #[allow(dead_code)]
+    pub fn debug() -> ErrorScribe {
+        ErrorScribe {
+            errors: vec![],
+            termination_policy: TerminationPolicy::PERMISSIVE
+        }
+    }
+
     pub fn from_termination_policy(termination_policy: TerminationPolicy) -> ErrorScribe {
         ErrorScribe {
             errors: vec![],
@@ -42,12 +50,12 @@ impl ErrorScribe {
     }
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum ErrorType {
     //lexical errors
-    UNEXPECTEDCHAR { symbol: char },
-    BADSTRFMT,
-    NONASCIICHARACTER { symbol: char },
+    LEXER_UNEXPECTED_SYMBOL { symbol: char },
+    LEXER_BAD_STR_FMT,
     EXPECTEDLITERAL { found: TokenType },
     EXPECTEDTOKEN { ttype: TokenType },
     EXPECTEDTYPE,
@@ -79,9 +87,8 @@ impl Red for String {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let msg = match &self.etype {
-            ErrorType::UNEXPECTEDCHAR { symbol } => format!("unexpected character: {}", symbol),
-            ErrorType::BADSTRFMT => String::from("string wasn't closed."),
-            ErrorType::NONASCIICHARACTER { symbol } => format!("encountered non-ASCII character: {}", symbol),
+            ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol } => format!("unexpected character: {}", symbol),
+            ErrorType::LEXER_BAD_STR_FMT => String::from("string wasn't closed."),
             ErrorType::EXPECTEDLITERAL { found } => format!("expected literal, found: {:?}", found),
             ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype),
             ErrorType::EXPECTEDTYPE => String::from("attempting to change the variable type without using 'into'"),
