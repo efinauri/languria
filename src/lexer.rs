@@ -46,6 +46,7 @@ pub enum TokenType {
     TRUE,
     FALSE,
     EOF,
+    EOLPRINT,
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -234,8 +235,8 @@ impl<'a> Lexer<'_> {
                 '*' => MUL,
                 '/' => DIV,
                 '?' => QUESTIONMARK,
-                '$' => DOLLAR,
                 '@' => AT,
+                '$' => if self.consume_next_if_eq('$') { EOLPRINT } else { DOLLAR }
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
                 '=' => if self.consume_next_if_eq('=') { EQ } else { ASSIGN }
                 '<' => if self.consume_next_if_eq('=') { LTE } else { LT }

@@ -48,13 +48,15 @@ impl Scope {
 pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope) -> Value {
     let mut ret = ERR;
     for expr in exprs {
-        ret = evaluate_expression(&expr, x);
+        let eval = evaluate_expression(&expr, x);
+        if eval != NOTAVAL { ret = eval; }
     }
     ret
 }
 
 #[derive(Debug)]
 #[derive(Clone)]
+#[derive(PartialEq)]
 pub enum Value {
     INTEGER(i32),
     FLOAT(f64),
@@ -83,6 +85,14 @@ fn num_as_bool(v: &Value) -> Value {
         FLOAT(flt) => BOOLEAN(flt.is_sign_positive()),
         _ => { ERR }
     };
+}
+
+fn print_eol(scope: &mut Scope, line: &usize) -> Value {
+    let start_new_line = scope.print_line != *line;
+    scope.print_line = *line;
+    let to_print = format!("[{}:{}]", scope.entry_point, line);
+    if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
+    NOTAVAL
 }
 
 #[allow(non_snake_case)]
@@ -122,7 +132,7 @@ impl Value {
         };
         let start_new_line = scope.print_line != curr_line;
         scope.print_line = curr_line;
-        if start_new_line { print!("\n{}{}", tag, &self); } else { print!(", {}{}", tag, &self); }
+        if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
         &self
     }
 
@@ -191,6 +201,7 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope) -> Value {
 
         LITERAL { value } => {
             match &value.ttype {
+                TokenType::EOLPRINT => print_eol(scope, &value.line),
                 TokenType::FALSE => BOOLEAN(false),
                 TokenType::TRUE => BOOLEAN(true),
                 TokenType::STRING(str) => STRING(str.to_owned()),

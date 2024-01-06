@@ -2,7 +2,6 @@ use std::env;
 use std::fs::File;
 use std::io::{Read, stdin, stdout, Write};
 use std::path::Path;
-use std::thread::scope;
 
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
@@ -28,7 +27,7 @@ fn interpret_file(filename: &str) {
     let path = Path::new(filename);
     let mut file = match File::open(path) {
         Ok(f) => { f }
-        Err(_) => { return serve_repl();}
+        Err(_) => { return serve_repl(); }
     };
     let mut content = String::new();
     file.read_to_string(&mut content)
@@ -55,7 +54,13 @@ fn serve_repl() {
         let mut user_input = String::new();
         print!("\n> ");
         stdout().flush().unwrap();
-        stdin().read_line(&mut user_input).unwrap();
+        match stdin().read_line(&mut user_input) {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!("REPL error: {}", err);
+                continue
+            }
+        };
         if {
             "q\n";
             "q";

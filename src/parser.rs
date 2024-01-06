@@ -166,7 +166,7 @@ impl Parser<'_> {
                     VAR_ASSIGN { varname: str.clone(), varval: Box::new(self.build_expression()) }
                 } else { VAR_RAW { varname: str.clone() } }
             }
-            FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) => {
+            FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.counter.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
             }
