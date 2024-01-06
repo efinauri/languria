@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use std::io::{stdout, Write};
-use std::process;
 use std::process::exit;
 
 use crate::lexer::TokenType;
@@ -18,14 +17,6 @@ pub struct ErrorScribe {
 }
 
 impl ErrorScribe {
-
-    pub fn new() -> ErrorScribe {
-        ErrorScribe {
-            errors: vec![],
-            termination_policy: TerminationPolicy::STRICT,
-        }
-    }
-
     pub fn from_termination_policy(termination_policy: TerminationPolicy) -> ErrorScribe {
         ErrorScribe {
             errors: vec![],

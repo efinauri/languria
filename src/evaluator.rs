@@ -47,7 +47,7 @@ impl Scope {
             old_val = &varval;
         }
         let val_to_save = match op.ttype {
-            ASSIGN => { varval }
+            ASSIGN | INTO => { varval }
             MINASSIGN => { varval.min_them(old_val) }
             MAXASSIGN => { varval.max_them(old_val) }
             _ => { NOTAVAL }

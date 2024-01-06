@@ -81,12 +81,6 @@ pub struct Token {
 
 
 impl Token {
-    pub fn from_debug(ttype: TokenType) -> Token {
-        Token {
-            ttype,
-            line: 0,
-        }
-    }
     fn new(ttype: TokenType, line: usize) -> Token {
         Token {
             ttype,

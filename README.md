@@ -1,11 +1,37 @@
-__ABOUT__
+__TABLE OF CONTENTS__
+<!-- TOC -->
+* [ABOUT](#about)
+* [SYNTAX](#syntax)
+  * [EXPRESSIONS](#expressions)
+    * [VARIABLES AND TYPES](#variables-and-types)
+    * [PRINT](#print)
+<!-- TOC -->
 
-languria is a toy programming language made for self-teaching and personal use, written by referencing the excellent [crafting intepreters](https://craftinginterpreters.com/) book by R. Nystrom. 
-The name ("the watermelon" in italian) is the first thing that came to mind that starts with lang-. Appearently it's also a [beetle](https://en.wikipedia.org/wiki/Languria), which might as well make for a nice mascot!
+# ABOUT
 
-__SYNTAX (in progress)__ 
+Languria is a toy programming language made for self-teaching and personal use, written by referencing the excellent [crafting intepreters](https://craftinginterpreters.com/) book by R. Nystrom.
 
-- __PRINT__
+The name (a homophone for "the watermelon" in italian) is the first thing that came to mind that starts with lang-. After having looked the name up, I learned that Languria is also a [nice looking beetle](https://en.wikipedia.org/wiki/Languria), which easily became the language's mascot.
+
+# SYNTAX
+## EXPRESSIONS
+### VARIABLES AND TYPES
+
+A variable is a container for an expression.
+
+    x = 1  // variables cannot be declared without being initialized.
+    x => 2  // equivalent to x = max(x, 2)
+    z =< 1  // equivalent to x = min(x, 1)
+
+You can specify the variable type for clarity.
+
+    int x = 1
+
+Languria is statically typed. If you wish to reuse a variable name to store the value of another type, you need the "into" keyword:
+
+    $x into "2"
+
+### PRINT
 
 You can print an expression by placing an `$` before it.
 
@@ -20,7 +46,7 @@ Multiple `$` on the same line are printed separated by a comma, in the order in 
     // However there's no good reason to expect that this whole line will print "9 16 25" as opposed to "16 9 25".
 
 To remedy this, you can also tag any of your print statements as such.
-    
+
     $math = $<a>(3*3) + $<b>(4*4)  // prints "a: 9 b: 16 25"
 
 `$$` prints the current location of the line.

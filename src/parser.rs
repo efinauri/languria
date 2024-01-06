@@ -7,6 +7,7 @@ use crate::parser::Expression::*;
 use crate::shared::{Counter, WalksCollection};
 
 #[derive(Debug, Clone)]
+#[allow(non_camel_case_types)]
 pub enum Expression {
     LITERAL { value: Token },
     UNARY { op: Token, expr: Box<Expression> },
@@ -15,21 +16,6 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
     NOTANEXPR,
-}
-
-impl Expression {
-    fn type_equals(&self, other: &Expression) -> bool {
-        match (self, other) {
-            (LITERAL { value: _ }, LITERAL { value: _ }) |
-            (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
-            (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
-            (GROUPING { expr: _ }, GROUPING { expr: _ }) |
-            (VAR_ASSIGN { varname: _, op: _, varval: _ }, VAR_ASSIGN { varname: _, op: _, varval: _ }) |
-            (VAR_RAW { varname: _ }, VAR_RAW{ varname: _ }) |
-            (NOTANEXPR, NOTANEXPR) => true,
-            _ => false
-        }
-    }
 }
 
 impl Display for Expression {
@@ -44,7 +30,7 @@ impl Display for Expression {
             GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)).unwrap(); }
             NOTANEXPR => { let _ = f.write_str("ERR"); }
-            VAR_ASSIGN { varname, op, varval } =>
+            VAR_ASSIGN { varname, op: _, varval } =>
                 { f.write_str(&*format!("{}<-{}", varname, varval)).unwrap(); }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)).unwrap() }
@@ -225,10 +211,6 @@ impl Parser<'_> {
         ttypes[1..].iter()
             .zip(0..)
             .all(|(tt, i)| self.peek(i).type_equals(tt))
-    }
-
-    fn next_in(&self, ttypes: &[TokenType]) -> bool {
-        self.can_consume() && ttypes.contains(&self.read_next().ttype)
     }
 
     fn curr_in(&self, ttypes: &[TokenType]) -> bool {
