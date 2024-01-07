@@ -152,7 +152,7 @@ impl Value {
                 match (**boxx).clone() {
                     LITERAL { value } =>
                         match value.ttype {
-                            TokenType::IDENTIFIER(str) => {
+                            IDENTIFIER(str) => {
                                 format!("{}: ", str)
                             }
                             _ => String::new()
@@ -247,9 +247,9 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
 
         LITERAL { value } => {
             match &value.ttype {
-                TokenType::EOLPRINT => print_eol(scope, &value.line),
-                TokenType::FALSE => BOOLEAN(false),
-                TokenType::TRUE => BOOLEAN(true),
+                EOLPRINT => print_eol(scope, &value.line),
+                FALSE => BOOLEAN(false),
+                TRUE => BOOLEAN(true),
                 TokenType::STRING(str) => STRING(str.to_owned()),
                 TokenType::INTEGER(int) => INTEGER(*int),
                 TokenType::FLOAT(flt) => FLOAT(*flt),
@@ -260,9 +260,9 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
         Expression::UNARY { op, expr } => {
             let expr = evaluate_expression(expr, scope, scribe);
             match op.ttype {
-                TokenType::BANG => { expr.bang_it() }
-                TokenType::MINUS => { expr.minus_it() }
-                TokenType::DOLLAR => {
+                BANG => { expr.bang_it() }
+                MINUS => { expr.minus_it() }
+                DOLLAR => {
                     expr.print_it(op.line, scope, None).clone()
                 }
                 _ => { ERR }
@@ -274,11 +274,11 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
             let erhs = evaluate_expression(rhs, scope, scribe);
 
             match op.ttype {
-                TokenType::DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }
-                TokenType::MINUS => { elhs.minus_them(&erhs) }
-                TokenType::PLUS => { elhs.plus_them(&erhs) }
-                TokenType::MUL => { elhs.mul_them(&erhs) }
-                TokenType::DIV => { elhs.div_them(&erhs) }
+                DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }
+                MINUS => { elhs.minus_them(&erhs) }
+                PLUS => { elhs.plus_them(&erhs) }
+                MUL => { elhs.mul_them(&erhs) }
+                DIV => { elhs.div_them(&erhs) }
                 // TokenType::GT => { lhs > rhs }
                 // TokenType::GTE => { lhs >= rhs }
                 // TokenType::LT => { lhs < rhs }

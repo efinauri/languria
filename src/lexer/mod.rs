@@ -106,8 +106,7 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&*format!("{:?}", self.ttype))?;
-        Ok(())
+        Ok(f.write_str(&*format!("{:?}", self.ttype))?)
     }
 }
 

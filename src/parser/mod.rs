@@ -6,6 +6,8 @@ use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
 use crate::shared::{Cursor, WalksCollection};
 
+mod tests;
+
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
 pub enum Expression {
@@ -17,6 +19,24 @@ pub enum Expression {
     VAR_RAW { varname: String },
     NOTANEXPR,
 }
+
+impl Expression {
+    #[allow(dead_code)]
+    pub fn type_equals(&self, other: &Self) -> bool {
+        match (self, other) {
+            (LITERAL { value: _ }, LITERAL { value: _ }) |
+            (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
+            (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
+            (GROUPING { expr: _ }, GROUPING { expr: _ }) |
+            (VAR_ASSIGN { varname: _, op: _, varval: _ },
+                VAR_ASSIGN { varname: _, op: _, varval: _ }) |
+            (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
+            (NOTANEXPR, NOTANEXPR) => true,
+            (_, _) => false
+        }
+    }
+}
+
 
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -48,20 +68,20 @@ const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
-    counter: Cursor,
+    cursor: Cursor,
     scribe: &'a mut ErrorScribe,
 }
 
 impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
-    fn cnt(&self) -> &Cursor { &self.counter }
-    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.counter }
+    fn cnt(&self) -> &Cursor { &self.cursor }
+    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.cursor }
     fn arr(&self) -> &Vec<Token> { &self.tokens }
 }
 
 
 impl Parser<'_> {
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser { tokens, counter: Cursor::new(), scribe, }
+        Parser { tokens, cursor: Cursor::new(), scribe }
     }
 
     pub fn parse(&mut self) -> Vec<Expression> {
@@ -78,13 +98,14 @@ impl Parser<'_> {
     fn assignment(&mut self) -> Expression {
         let mut expr = self.equality();
         if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             expr = match &self.peek_back(2).ttype {
                 IDENTIFIER(str) => {
                     VAR_ASSIGN {
                         varname: str.clone(),
                         op: self.read_prev().clone(),
-                        varval: Box::new(self.build_expression()) }
+                        varval: Box::new(self.build_expression()),
+                    }
                 }
                 _ => {
                     self.scribe.annotate_error(Error::on_line(self.read_curr().line,
@@ -100,7 +121,7 @@ impl Parser<'_> {
         let mut expr = self.comparison();
 
         while self.curr_in(&EQ_TOKENS) {
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
@@ -114,13 +135,12 @@ impl Parser<'_> {
     fn comparison(&mut self) -> Expression {
         let mut expr = self.term();
         while self.curr_in(&CMP_TOKENS) {
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
                 rhs: Box::new(self.term()),
             };
-
         }
         expr
     }
@@ -129,13 +149,12 @@ impl Parser<'_> {
         let mut expr = self.factor();
 
         while self.curr_in(&MATH_LO_PRIORITY_TOKENS) {
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
                 rhs: Box::new(self.factor()),
             };
-
         }
         expr
     }
@@ -144,7 +163,7 @@ impl Parser<'_> {
         let mut expr = self.unary();
 
         while self.curr_in(&MATH_HI_PRIORITY_TOKENS) {
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             expr = BINARY {
                 lhs: Box::new(expr),
                 op: self.read_prev().clone(),
@@ -159,12 +178,12 @@ impl Parser<'_> {
             let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
             if self.curr_is_seq(&seq) {
                 let op = self.read_prev().clone();
-                self.counter.step_fwd();
+                self.cursor.step_fwd();
                 let value = self.read_curr().clone();
-                self.counter.mov(2);
-                return BINARY { op: op, rhs: Box::new(LITERAL { value }), lhs: Box::new(self.unary()) };
+                self.cursor.mov(2);
+                return BINARY { op, rhs: Box::new(LITERAL { value }), lhs: Box::new(self.unary()) };
             }
-            self.counter.step_fwd();
+            self.cursor.step_fwd();
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
         }
         self.primary()
@@ -173,40 +192,44 @@ impl Parser<'_> {
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
-                self.read_curr().line,
+                if self.tokens.is_empty() { 0 } else { self.read_curr().line },
                 ErrorType::EXPECTEDLITERAL { found: EOF }));
             return NOTANEXPR;
         }
-        return match &self.tokens.get(self.counter.get()).unwrap().ttype {
+        return match &self.tokens.get(self.cursor.get()).unwrap().ttype {
             IDENTIFIER(str) => {
-                self.counter.step_fwd();
-                VAR_RAW { varname: str.clone() } }
+                self.cursor.step_fwd();
+                VAR_RAW { varname: str.clone() }
+            }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
-                self.counter.step_fwd();
+                self.cursor.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
             }
             LPAREN => {
-                self.counter.step_fwd();
+                self.cursor.step_fwd();
                 let expr = self.build_expression();
-                self.assert_next_is(RPAREN);
-                self.counter.step_fwd();
+                self.assert_curr_is(RPAREN);
+                self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
             _ => { NOTANEXPR }
         };
     }
 
-    fn assert_next_is(&mut self, ttype: TokenType) {
-        if !self.can_consume() || ttype != self.read_curr().ttype {
+    fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
+        if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
             self.scribe.annotate_error(Error::on_line(
                 0,
                 ErrorType::EXPECTEDTOKEN { ttype }));
+            return false;
         }
+        true
     }
 
     fn curr_is_seq(&self, ttypes: &[TokenType]) -> bool {
+        if self.tokens.is_empty() || ttypes.is_empty() {return false;}
         if !self.can_peek(ttypes.len() - 1) { return false; }
-        if self.counter.get() == 0 { return false; }
+        if self.cursor.get() == 0 { return false; }
         if !self.read_prev().type_equals(&ttypes[0]) { return false; }
         ttypes[1..].iter()
             .zip(0..)
@@ -215,34 +238,5 @@ impl Parser<'_> {
 
     fn curr_in(&self, ttypes: &[TokenType]) -> bool {
         self.can_consume() && ttypes.contains(&self.read_curr().ttype)
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use crate::lexer::Token;
-    use crate::lexer::TokenType::{FLOAT, INTEGER, MINUS, MUL};
-    use crate::parser::Expression::{BINARY, GROUPING, UNARY};
-    use crate::parser::LITERAL;
-
-    #[test]
-    fn print_tree() {
-        let mul = Token::debug(MUL);
-        let four = Token::debug(INTEGER(4));
-        let six_point_two = Token::debug(FLOAT(6.2));
-        let minus = Token::debug(MINUS);
-
-        let e = BINARY {
-            lhs: Box::from(UNARY {
-                op: minus,
-                expr: Box::from(LITERAL { value: four }),
-            }),
-            op: mul,
-            rhs: Box::from(GROUPING {
-                expr: Box::from(LITERAL { value: six_point_two })
-            }),
-        };
-        println!("{}", e);
     }
 }
