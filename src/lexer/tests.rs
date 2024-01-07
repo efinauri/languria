@@ -45,7 +45,7 @@ mod tests {
         assert!(l.consume_next_if_eq('1'));
         dbg!(&l);
         assert_eq!(*l.consume(), '2');
-        assert!(l.consume_next_if_eq('?'));
+        assert!(!l.consume_next_if_eq('?'));
     }
 
     #[test]
