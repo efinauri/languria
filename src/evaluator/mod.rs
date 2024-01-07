@@ -11,6 +11,8 @@ use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 use crate::parser::Expression::{LITERAL, VAR_RAW};
 
+mod tests;
+
 pub struct Scope {
     env: HashMap<String, Value>,
     curr_line: usize,
@@ -64,7 +66,7 @@ impl Scope {
 }
 
 pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope, es: &mut ErrorScribe) -> Value {
-    let mut ret = ERR;
+    let mut ret = NOTAVAL;
     for expr in exprs {
         let eval = evaluate_expression(&expr, x, es);
         if eval != NOTAVAL { ret = eval; }
@@ -74,7 +76,7 @@ pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope, es: &mut Erro
 
 #[derive(Debug)]
 #[derive(Clone)]
-#[derive(PartialEq)]
+#[derive(PartialEq, PartialOrd)]
 pub enum Value {
     INTEGER(i32),
     FLOAT(f64),
@@ -84,19 +86,6 @@ pub enum Value {
     NOTAVAL,
 }
 
-impl Value {
-    pub(crate) fn type_equals(&self, other: &Value) -> bool {
-        match (self, other) {
-            (INTEGER(_), INTEGER(_)) |
-            (FLOAT(_), FLOAT(_)) |
-            (STRING(_), STRING(_)) |
-            (BOOLEAN(_), BOOLEAN(_)) |
-            (ERR, ERR) |
-            (NOTAVAL, NOTAVAL) => { true }
-            (_, _) => false
-        }
-    }
-}
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -129,6 +118,17 @@ fn print_eol(scope: &mut Scope, line: &usize) -> Value {
 
 #[allow(non_snake_case)]
 impl Value {
+    pub fn type_equals(&self, other: &Value) -> bool {
+        match (self, other) {
+            (INTEGER(_), INTEGER(_)) |
+            (FLOAT(_), FLOAT(_)) |
+            (STRING(_), STRING(_)) |
+            (BOOLEAN(_), BOOLEAN(_)) |
+            (ERR, ERR) |
+            (NOTAVAL, NOTAVAL) => { true }
+            (_, _) => false
+        }
+    }
     fn bang_it(&self) -> Value {
         match self {
             INTEGER(_) | FLOAT(_) => num_as_bool(&self).bang_it(),
@@ -231,7 +231,10 @@ impl Value {
             (_, _) => ERR
         }
     }
+
+    fn cmp_them(&self, other: &Value, cmp: fn(&Value, &Value) -> bool) -> Value { BOOLEAN(cmp(self, other)) }
 }
+
 
 fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
@@ -279,15 +282,14 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
                 PLUS => { elhs.plus_them(&erhs) }
                 MUL => { elhs.mul_them(&erhs) }
                 DIV => { elhs.div_them(&erhs) }
-                // TokenType::GT => { lhs > rhs }
-                // TokenType::GTE => { lhs >= rhs }
-                // TokenType::LT => { lhs < rhs }
-                // TokenType::LTE => { lhs <= rhs }
-                // TokenType::EQ => { lhs == rhs }
-                // TokenType::UNEQ => { lhs != rhs }
+                GT => { elhs.cmp_them(&erhs, |a, b| a > b) }
+                GTE => { elhs.cmp_them(&erhs, |a, b| a >= b) }
+                LT => { elhs.cmp_them(&erhs, |a, b| a < b) }
+                LTE => { elhs.cmp_them(&erhs, |a, b| a <= b) }
+                EQ => { elhs.cmp_them(&erhs, |a, b| a == b) }
+                UNEQ => { elhs.cmp_them(&erhs, |a, b| a != b) }
                 _ => { ERR }
             }
         }
-        // _ => { ERR }
     }
 }

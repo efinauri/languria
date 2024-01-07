@@ -29,7 +29,7 @@ You can specify the variable type for clarity.
 
 Languria is statically typed. If you wish to reuse a variable name to store the value of another type, you need the "into" keyword:
 
-    $x into "2"
+    x into "2"
 
 ### PRINT
 
