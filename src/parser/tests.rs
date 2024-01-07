@@ -36,7 +36,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert_eq!(expr.type_equals(&NOTANEXPR), true);
+        assert!(expr.type_equals(&NOTANEXPR));
     }
 
     #[test]
@@ -51,11 +51,11 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert_eq!(expr.type_equals(&VAR_ASSIGN {
+        assert!(expr.type_equals(&VAR_ASSIGN {
             varname: "".to_string(),
             op: Token::debug(NOTATOKEN),
             varval: Box::new(NOTANEXPR),
-        }), true);
+        }));
     }
 
     #[test]
@@ -77,11 +77,11 @@ mod tests {
                 &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
-            assert_eq!(expr.type_equals(&BINARY {
+            assert!(expr.type_equals(&BINARY {
                 lhs: Box::new(NOTANEXPR),
                 op: Token::debug(NOTATOKEN),
                 rhs: Box::new(NOTANEXPR),
-            }), true);
+            }));
         }
     }
 
@@ -101,10 +101,10 @@ mod tests {
                 &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
-            assert_eq!(expr.type_equals(&UNARY {
+            assert!(expr.type_equals(&UNARY {
                 op: Token::debug(NOTATOKEN),
                 expr: Box::new(NOTANEXPR),
-            }), true);
+            }));
         }
     }
 
@@ -114,7 +114,7 @@ mod tests {
         for (op_tok, idx) in vec![
             Token::debug(INTEGER(2)),
             Token::debug(FLOAT(2.2)),
-            Token::debug(STRING(String::from("hi")))
+            Token::debug(STRING(String::from("hi"))),
         ].iter().zip(0..)
         {
             let mut p = Parser::from_tokens(
@@ -125,9 +125,9 @@ mod tests {
                 &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
-            assert_eq!(expr.type_equals(&LITERAL {
+            assert!(expr.type_equals(&LITERAL {
                 value: Token::debug(NOTATOKEN),
-            }), true);
+            }));
         }
     }
 
@@ -138,14 +138,14 @@ mod tests {
             vec![
                 Token::debug(LPAREN),
                 Token::debug(INTEGER(2)),
-                Token::debug(RPAREN)
+                Token::debug(RPAREN),
             ],
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert_eq!(expr.type_equals(&GROUPING {
+        assert!(expr.type_equals(&GROUPING {
             expr: Box::new(NOTANEXPR),
-        }), true);
+        }));
     }
 
     #[test]
@@ -158,9 +158,9 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert_eq!(expr.type_equals(&VAR_RAW {
+        assert!(expr.type_equals(&VAR_RAW {
             varname: "".to_string(),
-        }), true);
+        }));
     }
 
     #[test]
@@ -176,18 +176,18 @@ mod tests {
             ],
             &mut es);
         dbg!(&p.read_curr());
-        assert_eq!(p.assert_curr_is(IDENTIFIER(String::from("Y"))), true);
+        assert!(p.assert_curr_is(IDENTIFIER(String::from("Y"))));
         p.cursor.mov(2);
         dbg!(&p.read_curr());
-        assert_eq!(p.curr_in(&[LT, DOLLAR, BANG]), true);
-        assert_eq!(p.curr_in(&[LT]), true);
-        assert_eq!(p.curr_in(&[DOLLAR, BANG]), false);
-        assert_eq!(p.assert_curr_is(LT), true);
-        assert_eq!(p.curr_is_seq(&[GT, LT, GTE]), true);
-        assert_eq!(p.curr_is_seq(&[GT, LT, GTE, LTE, LTE]), false);
-        assert_eq!(p.curr_is_seq(&[GT, BANG]), false);
-        assert_eq!(p.curr_is_seq(&[]), false);
+        assert!(p.curr_in(&[LT, DOLLAR, BANG]));
+        assert!(p.curr_in(&[LT]));
+        assert!(!p.curr_in(&[DOLLAR, BANG]));
+        assert!(p.assert_curr_is(LT));
+        assert!(p.curr_is_seq(&[GT, LT, GTE]));
+        assert!(!p.curr_is_seq(&[GT, LT, GTE, LTE, LTE]));
+        assert!(!p.curr_is_seq(&[GT, BANG]));
+        assert!(!p.curr_is_seq(&[]));
         p.cursor.mov(100);
-        assert_eq!(p.assert_curr_is(LT), false);
+        assert!(!p.assert_curr_is(LT));
     }
 }

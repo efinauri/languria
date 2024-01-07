@@ -21,19 +21,19 @@ mod tests {
     fn consume_nothing() {
         let mut es = ErrorScribe::debug();
         let l = Lexer::from_string(String::from(""), &mut es);
-        assert_eq!(l.can_consume(), false);
+        assert!(!l.can_consume());
     }
 
     #[test]
     fn test_bounds() {
         let mut es = ErrorScribe::debug();
         let mut l = Lexer::from_string(String::from("="), &mut es);
-        assert_eq!(l.can_consume(), true);
+        assert!(l.can_consume());
         l.cursor.step_fwd();
         dbg!(&l);
-        assert_eq!(l.can_consume(), false);
+        assert!(!l.can_consume());
         l.cursor.mov(1000);
-        assert_eq!(l.can_consume(), false);
+        assert!(!l.can_consume());
     }
 
     #[test]
@@ -41,11 +41,11 @@ mod tests {
         let mut es = ErrorScribe::debug();
         let mut l = Lexer::from_string(String::from("12"), &mut es);
         dbg!(&l);
-        assert_eq!(l.consume_next_if_eq('6'), false);
-        assert_eq!(l.consume_next_if_eq('1'), true);
+        assert!(!l.consume_next_if_eq('6'));
+        assert!(l.consume_next_if_eq('1'));
         dbg!(&l);
         assert_eq!(*l.consume(), '2');
-        assert_eq!(l.consume_next_if_eq('?'), false);
+        assert!(l.consume_next_if_eq('?'));
     }
 
     #[test]
@@ -69,7 +69,7 @@ mod tests {
             FLOAT(flt) => flt,
             _ => { panic!("test failed") }
         };
-        assert_eq!(flt - 0.28 < 0.00001, true);
+        assert!(flt - 0.28 < 0.00001);
     }
 
     #[test]
@@ -95,7 +95,7 @@ mod tests {
             _ => { panic!("test failed") }
         };
         dbg!(&str);
-        assert_eq!(str.eq("hello, \"dude\"!"), true);
+        assert!(str.eq("hello, \"dude\"!"));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
             _ => { panic!("test failed") }
         };
         dbg!(&str);
-        assert_eq!(str.eq("→→↓đ”€€ſæð”€ſ"), true);
+        assert!(str.eq("→→↓đ”€€ſæð”€ſ"));
     }
 
     #[test]
