@@ -17,6 +17,7 @@ pub enum Expression {
     GROUPING { expr: Box<Expression> },
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
+    BLOCK { exprs: Vec<Box<Expression>> },
     NOTANEXPR,
 }
 
@@ -24,6 +25,12 @@ impl Expression {
     #[allow(dead_code)]
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
+            (BLOCK { exprs }, _) => {
+                match exprs.last() {
+                    None => { false }
+                    Some(e) => { e.type_equals(other) }
+                }
+            }
             (LITERAL { value: _ }, LITERAL { value: _ }) |
             (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
             (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
@@ -54,12 +61,14 @@ impl Display for Expression {
                 { f.write_str(&*format!("{}<-{}", varname, varval)).unwrap(); }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)).unwrap() }
+            BLOCK { exprs } =>
+                { f.write_str(&*format!("[[{:?}]]", exprs)).unwrap() }
         }
         Ok(())
     }
 }
 
-const ASSIGN_TOKENS: [TokenType; 4] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN];
+const ASSIGN_TOKENS: [TokenType; 8] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
@@ -93,7 +102,22 @@ impl Parser<'_> {
         expressions
     }
 
-    fn build_expression(&mut self) -> Expression { self.assignment() }
+    fn build_expression(&mut self) -> Expression { self.block() }
+
+    fn block(&mut self) -> Expression {
+        let mut expr = self.assignment();
+        let mut exprs = vec![];
+        if self.can_consume() && self.curr_in(&[LBRACE]) {
+            self.cursor.step_fwd();
+            while self.can_consume() && !self.curr_in(&[RBRACE]) {
+                exprs.push(Box::new(self.block()));
+            }
+            self.assert_curr_is(RBRACE);
+            self.cursor.step_fwd();
+            expr = BLOCK { exprs }
+        }
+        expr
+    }
 
     fn assignment(&mut self) -> Expression {
         let mut expr = self.equality();
@@ -227,7 +251,7 @@ impl Parser<'_> {
     }
 
     fn curr_is_seq(&self, ttypes: &[TokenType]) -> bool {
-        if self.tokens.is_empty() || ttypes.is_empty() {return false;}
+        if self.tokens.is_empty() || ttypes.is_empty() { return false; }
         if !self.can_peek(ttypes.len() - 1) { return false; }
         if self.cursor.get() == 0 { return false; }
         if !self.read_prev().type_equals(&ttypes[0]) { return false; }

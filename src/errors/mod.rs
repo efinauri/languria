@@ -21,7 +21,7 @@ impl ErrorScribe {
     pub fn debug() -> ErrorScribe {
         ErrorScribe {
             errors: vec![],
-            termination_policy: TerminationPolicy::PERMISSIVE
+            termination_policy: TerminationPolicy::PERMISSIVE,
         }
     }
 
@@ -56,10 +56,13 @@ pub enum ErrorType {
     //lexical errors
     LEXER_UNEXPECTED_SYMBOL { symbol: char },
     LEXER_BAD_STR_FMT,
+    // parser errors
     EXPECTEDLITERAL { found: TokenType },
     EXPECTEDTOKEN { ttype: TokenType },
     EXPECTEDTYPE,
     BADASSIGNMENTLHS,
+    // eval errors
+    UNASSIGNEDVAR { varname: String },
 }
 
 #[derive(Debug)]
@@ -92,7 +95,8 @@ impl Display for Error {
             ErrorType::EXPECTEDLITERAL { found } => format!("expected literal, found: {:?}", found),
             ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype),
             ErrorType::EXPECTEDTYPE => String::from("attempting to change the variable type without using 'into'"),
-            ErrorType::BADASSIGNMENTLHS => String::from("only identifiers can be assigned values.")
+            ErrorType::BADASSIGNMENTLHS => String::from("only identifiers can be assigned values."),
+            ErrorType::UNASSIGNEDVAR { varname } => format!("uninitialized variable: {}", varname)
         };
         f.write_str(&*(self.err_location() + &*msg).red())
     }

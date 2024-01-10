@@ -18,50 +18,83 @@ pub struct Scope {
     curr_line: usize,
     last_print_line: usize,
     entry_point: String,
+    child_scope: Option<Box<Self>>,
 }
 
 impl Scope {
+    pub fn attach_child_scope(&mut self) -> &mut Scope {
+        self.child_scope = Some(Box::new(Scope::new()));
+        self.child_scope.as_mut().unwrap()
+    }
+    pub fn detach_child_scope(&mut self) {
+        self.child_scope = None;
+    }
+
     pub fn reset_print(&mut self) { self.last_print_line = 0; }
-}
 
-impl Scope {
     pub fn register_entrypoint(&mut self, entry_point: &OsStr) {
         self.entry_point = String::from(entry_point.to_str().unwrap());
     }
-}
-
-impl Scope {
     pub fn new() -> Scope {
         Scope {
             env: Default::default(),
             curr_line: 0,
             last_print_line: 0,
             entry_point: String::from("REPL"),
+            child_scope: None,
         }
+    }
+
+    fn innermost_variable_scope_mut(&mut self, varname: &String, scribe: &mut ErrorScribe) -> &mut Scope {
+        if self.child_scope.is_some() {
+            return self.child_scope.as_mut().unwrap().innermost_variable_scope_mut(varname, scribe);
+        }
+        self
+    }
+
+    fn innermost_variable_scope(&self, varname: &String) -> Option<&Scope> {
+        match &self.child_scope.as_ref() {
+            Some(scope) => { scope.innermost_variable_scope(varname) }
+            None => {
+                if self.env.contains_key(varname) { return Some(self); } else { None }
+            }
+        }
+    }
+
+    fn read_here(&self, varname: &String) -> Value { self.env.get(varname).unwrap().clone() }
+
+    pub fn read(&self, varname: &String) -> Option<Value> {
+        self.innermost_variable_scope(varname).map(|s| s.read_here(varname))
+    }
+
+    fn write_here(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
+        let old_val = &self.read(varname);
+        let val_to_write = match old_val {
+            None => { varval }
+            Some(ov) => {
+                match op.ttype {
+                    ASSIGN | INTO => { varval }
+                    MINASSIGN => { varval.min_them(ov) }
+                    MAXASSIGN => { varval.max_them(ov) }
+                    PLUSASSIGN => { varval.plus_them(ov) }
+                    MINUSASSIGN => { ov.minus_them(&varval) }
+                    MULASSIGN => { varval.mul_them(ov) }
+                    DIVASSIGN => { ov.div_them(&varval) }
+                    _ => { NOTAVAL }
+                }
+            }
+        };
+        if !op.type_equals(&INTO) && old_val.as_ref().is_some_and(|val| !val.type_equals(&val_to_write)) {
+            scribe.annotate_error(Error::on_line(self.curr_line, ErrorType::EXPECTEDTYPE));
+            return ERR;
+        }
+        self.env.insert(varname.clone(), val_to_write.clone());
+        val_to_write.clone()
     }
 
     fn write(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
-        let mut old_val = &self.read(varname);
-        if !op.type_equals(&INTO) && old_val != &ERR && !old_val.type_equals(&varval) {
-            scribe.annotate_error(Error::on_line(self.curr_line, ErrorType::EXPECTEDTYPE));
-            return ERR;
-        } else {
-            old_val = &varval;
-        }
-        let val_to_save = match op.ttype {
-            ASSIGN | INTO => { varval }
-            MINASSIGN => { varval.min_them(old_val) }
-            MAXASSIGN => { varval.max_them(old_val) }
-            _ => { NOTAVAL }
-        };
-        self.env.insert(varname.clone(), val_to_save.clone());
-        val_to_save.clone()
-    }
-
-    fn read(&self, varname: &String) -> Value {
-        if self.env.contains_key(varname) {
-            self.env.get(varname).unwrap().clone()
-        } else { ERR }
+        self.innermost_variable_scope_mut(varname, scribe)
+            .write_here(varname, varval, op, scribe)
     }
 }
 
@@ -91,7 +124,7 @@ impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             INTEGER(int) => { f.write_str(&*int.to_string()) }
-            FLOAT(flt) => { f.write_str(&*flt.to_string()) }
+            FLOAT(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract()>0.0 {""} else {".0"})) }
             STRING(str) => { f.write_str(str) }
             BOOLEAN(boo) => { f.write_str(&*boo.to_string()) }
             NOTAVAL => { f.write_str("no input.") }
@@ -238,6 +271,15 @@ impl Value {
 
 fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
+        Expression::BLOCK { exprs} => {
+            let subscope = scope.attach_child_scope();
+            let mut last_val = NOTAVAL;
+            for ex in exprs {
+                last_val = evaluate_expression(ex, subscope, scribe);
+            }
+            scope.detach_child_scope();
+            last_val
+        }
         Expression::NOTANEXPR => { NOTAVAL }
         Expression::GROUPING { expr } => { evaluate_expression(expr, scope, scribe) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
@@ -245,7 +287,14 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
             scope.write(varname, val, op, scribe).clone()
         }
         VAR_RAW { varname } => {
-            scope.read(varname).clone()
+            match scope.read(varname) {
+                None => {
+                    scribe.annotate_error(Error::on_line(scope.curr_line,
+                                                         ErrorType::UNASSIGNEDVAR { varname: varname.clone() }));
+                    ERR
+                }
+                Some(val) => { val }
+            }
         }
 
         LITERAL { value } => {

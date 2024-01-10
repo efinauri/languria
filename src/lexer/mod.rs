@@ -1,5 +1,3 @@
-mod tests;
-
 use std::clone::Clone;
 use std::collections::HashMap;
 use std::fmt;
@@ -12,6 +10,8 @@ use lazy_static::lazy_static;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::TokenType::*;
 use crate::shared::{Cursor, WalksCollection};
+
+mod tests;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
@@ -52,6 +52,10 @@ pub enum TokenType {
     ASSIGN,
     MAXASSIGN,
     MINASSIGN,
+    MULASSIGN,
+    DIVASSIGN,
+    PLUSASSIGN,
+    MINUSASSIGN,
     INTO,
     // others
     AT,
@@ -168,10 +172,10 @@ impl<'a> Lexer<'_> {
                     } else { break; }
                 }
                 '_' => { self.consume(); }
-                'a'..='z'| 'A'..='z' => {
+                'a'..='z' | 'A'..='z' => {
                     self.scribe.annotate_error(Error::on_line(
                         self.line_number,
-                        ErrorType::LEXER_UNEXPECTED_SYMBOL {symbol: peeked.clone() }
+                        ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol: peeked.clone() },
                     ));
                     return NOTATOKEN;
                 }
@@ -252,23 +256,26 @@ impl<'a> Lexer<'_> {
                 '}' => RBRACE,
                 ',' => COMMA,
                 '.' => DOT,
-                '-' => MINUS,
-                '+' => PLUS,
-                '*' => MUL,
                 '?' => QUESTIONMARK,
                 '@' => AT,
+                '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
+                '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
+                '*' => if self.consume_next_if_eq('=') { MULASSIGN } else { MUL },
                 '/' => if self.consume_next_if_eq('/') {
                     self.skip_comment();
                     continue;
-                } else { DIV },
+                } else if self.consume_next_if_eq('=') { DIVASSIGN } else { DIV },
                 '$' => if self.consume_next_if_eq('$') { EOLPRINT } else { DOLLAR }
                 '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
-                '=' => {
-                    if self.consume_next_if_eq('=') { EQ }
-                        else if self.consume_next_if_eq('>') { MAXASSIGN }
-                        else if self.consume_next_if_eq('<') { MINASSIGN }
-                        else { ASSIGN }
-                }
+                '=' => if self.consume_next_if_eq('=') {
+                    EQ
+                } else if self.consume_next_if_eq('>') {
+                    MAXASSIGN
+                } else if self.consume_next_if_eq('<') {
+                    MINASSIGN
+                } else {
+                    ASSIGN
+                },
                 '<' => if self.consume_next_if_eq('=') { LTE } else { LT }
                 '>' => if self.consume_next_if_eq('=') { GTE } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }
