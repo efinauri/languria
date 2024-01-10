@@ -102,22 +102,8 @@ impl Parser<'_> {
         expressions
     }
 
-    fn build_expression(&mut self) -> Expression { self.block() }
+    fn build_expression(&mut self) -> Expression { self.assignment() }
 
-    fn block(&mut self) -> Expression {
-        let mut expr = self.assignment();
-        let mut exprs = vec![];
-        if self.can_consume() && self.curr_in(&[LBRACE]) {
-            self.cursor.step_fwd();
-            while self.can_consume() && !self.curr_in(&[RBRACE]) {
-                exprs.push(Box::new(self.block()));
-            }
-            self.assert_curr_is(RBRACE);
-            self.cursor.step_fwd();
-            expr = BLOCK { exprs }
-        }
-        expr
-    }
 
     fn assignment(&mut self) -> Expression {
         let mut expr = self.equality();
@@ -236,6 +222,17 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
+            LBRACE => {
+                let mut exprs = vec![];
+                self.cursor.step_fwd();
+                while self.can_consume() && !self.curr_in(&[RBRACE]) {
+                    exprs.push(Box::new(self.build_expression()));
+                }
+                self.assert_curr_is(RBRACE);
+                self.cursor.step_fwd();
+                BLOCK { exprs }
+            }
+
             _ => { NOTANEXPR }
         };
     }
