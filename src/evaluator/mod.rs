@@ -52,19 +52,10 @@ impl Scope {
         self
     }
 
-    fn innermost_variable_scope(&self, varname: &String) -> Option<&Scope> {
-        match &self.child_scope.as_ref() {
-            Some(scope) => { scope.innermost_variable_scope(varname) }
-            None => {
-                if self.env.contains_key(varname) { return Some(self); } else { None }
-            }
-        }
-    }
-
-    fn read_here(&self, varname: &String) -> Value { self.env.get(varname).unwrap().clone() }
-
     pub fn read(&self, varname: &String) -> Option<Value> {
-        self.innermost_variable_scope(varname).map(|s| s.read_here(varname))
+        if let Some(val) = self.env.get(varname) { return Some(val.clone()); }
+        if let Some(scope) = &self.child_scope { return scope.read(varname); }
+        None
     }
 
     fn write_here(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
@@ -272,10 +263,10 @@ impl Value {
 fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
         Expression::BLOCK { exprs} => {
-            let subscope = scope.attach_child_scope();
+            scope.attach_child_scope();
             let mut last_val = NOTAVAL;
             for ex in exprs {
-                last_val = evaluate_expression(ex, subscope, scribe);
+                last_val = evaluate_expression(ex, scope, scribe);
             }
             scope.detach_child_scope();
             last_val

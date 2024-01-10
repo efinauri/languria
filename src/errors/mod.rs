@@ -63,6 +63,7 @@ pub enum ErrorType {
     BADASSIGNMENTLHS,
     // eval errors
     UNASSIGNEDVAR { varname: String },
+    PARSER_UNEXPECTED_TOKEN { ttype: TokenType },
 }
 
 #[derive(Debug)]
@@ -96,7 +97,8 @@ impl Display for Error {
             ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype),
             ErrorType::EXPECTEDTYPE => String::from("attempting to change the variable type without using 'into'"),
             ErrorType::BADASSIGNMENTLHS => String::from("only identifiers can be assigned values."),
-            ErrorType::UNASSIGNEDVAR { varname } => format!("uninitialized variable: {}", varname)
+            ErrorType::UNASSIGNEDVAR { varname } => format!("uninitialized variable: {}", varname),
+            ErrorType::PARSER_UNEXPECTED_TOKEN { ttype} => format!("unexpected token: {:?}", ttype),
         };
         f.write_str(&*(self.err_location() + &*msg).red())
     }

@@ -17,12 +17,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     match args.len() {
         0..=1 => { serve_repl() }
-        2 => { interpret_file(&args[1]) }
+        2 => { interpret_file(&args[1], false) }
+        3 => { interpret_file(&args[1], true) }
         _ => { print!("too many arguments.") }
     }
 }
 
-fn interpret_file(filename: &str) {
+fn interpret_file(filename: &str, verbose: bool) {
     let path = Path::new(filename);
     let mut file = match File::open(path) {
         Ok(f) => { f }
@@ -34,7 +35,7 @@ fn interpret_file(filename: &str) {
     let mut es = ErrorScribe::from_termination_policy(STRICT);
     let mut main_scope = Scope::new();
     main_scope.register_entrypoint(path.file_name().unwrap());
-    interpret_instructions(&mut es, content, &mut main_scope, false);
+    interpret_instructions(&mut es, content, &mut main_scope, verbose);
 }
 
 fn clear_terminal() {
@@ -57,7 +58,7 @@ fn serve_repl() {
             Ok(_) => {}
             Err(err) => {
                 eprintln!("REPL error: {}", err);
-                continue
+                continue;
             }
         };
         if {
@@ -88,8 +89,12 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut S
         es.clear_errors();
         return;
     }
-    let expr = exprs.first().unwrap();
-    if verbose { println!("\nthis is parsed as:\n{}\n", &expr); }
+    if verbose {
+        println!("\nthis is parsed as:\n");
+        for ex in &exprs {
+            println!("{}", ex);
+        }
+    }
     let value = evaluator::evaluate_expressions(exprs, ms, es);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)

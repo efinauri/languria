@@ -102,30 +102,7 @@ impl Parser<'_> {
         expressions
     }
 
-    fn build_expression(&mut self) -> Expression { self.assignment() }
-
-
-    fn assignment(&mut self) -> Expression {
-        let mut expr = self.equality();
-        if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
-            self.cursor.step_fwd();
-            expr = match &self.peek_back(2).ttype {
-                IDENTIFIER(str) => {
-                    VAR_ASSIGN {
-                        varname: str.clone(),
-                        op: self.read_prev().clone(),
-                        varval: Box::new(self.build_expression()),
-                    }
-                }
-                _ => {
-                    self.scribe.annotate_error(Error::on_line(self.read_curr().line,
-                                                              ErrorType::BADASSIGNMENTLHS));
-                    NOTANEXPR
-                }
-            };
-        }
-        expr
-    }
+    fn build_expression(&mut self) -> Expression { self.equality() }
 
     fn equality(&mut self) -> Expression {
         let mut expr = self.comparison();
@@ -206,10 +183,11 @@ impl Parser<'_> {
                 ErrorType::EXPECTEDLITERAL { found: EOF }));
             return NOTANEXPR;
         }
-        return match &self.tokens.get(self.cursor.get()).unwrap().ttype {
+        let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
+        return match ttype {
             IDENTIFIER(str) => {
                 self.cursor.step_fwd();
-                VAR_RAW { varname: str.clone() }
+                self.process_assignment(str)
             }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
@@ -222,19 +200,49 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
-            LBRACE => {
-                let mut exprs = vec![];
-                self.cursor.step_fwd();
-                while self.can_consume() && !self.curr_in(&[RBRACE]) {
-                    exprs.push(Box::new(self.build_expression()));
-                }
-                self.assert_curr_is(RBRACE);
-                self.cursor.step_fwd();
-                BLOCK { exprs }
-            }
+            LBRACE => { self.process_code_block() }
 
-            _ => { NOTANEXPR }
+            _ => {
+                self.scribe.annotate_error(Error::on_line(
+                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN {
+                        ttype: ttype.clone()
+                    }));
+                self.cursor.step_fwd();
+                NOTANEXPR
+            }
         };
+    }
+
+    fn process_assignment(&mut self, str: &String) -> Expression {
+        if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
+            self.cursor.step_fwd();
+            return match &self.peek_back(2).ttype {
+                IDENTIFIER(str) => {
+                    VAR_ASSIGN {
+                        varname: str.clone(),
+                        op: self.read_prev().clone(),
+                        varval: Box::new(self.build_expression()),
+                    }
+                }
+                _ => {
+                    self.scribe.annotate_error(Error::on_line(self.read_curr().line,
+                                                              ErrorType::BADASSIGNMENTLHS));
+                    NOTANEXPR
+                }
+            };
+        }
+        VAR_RAW { varname: str.clone() }
+    }
+
+    fn process_code_block(&mut self) -> Expression {
+        let mut exprs = vec![];
+        self.cursor.step_fwd();
+        while self.can_consume() && !self.curr_in(&[RBRACE]) {
+            exprs.push(Box::new(self.build_expression()));
+        }
+        self.assert_curr_is(RBRACE);
+        self.cursor.step_fwd();
+        BLOCK { exprs }
     }
 
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
