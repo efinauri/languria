@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
+
     use crate::errors::ErrorScribe;
     use crate::lexer::{Lexer, Token};
     use crate::lexer::TokenType::*;
@@ -154,6 +155,5 @@ mod tests {
         for (tt1, tt2) in zip(expected_types, toks) {
             assert_eq!(tt1, tt2.ttype);
         }
-
     }
 }

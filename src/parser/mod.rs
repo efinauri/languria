@@ -18,7 +18,8 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
     BLOCK { exprs: Vec<Box<Expression>> },
-    APPLICATION { arg: Box<Expression>, body: Vec<Box<Expression>> },
+    APPLIED_FUNC { arg: Box<Expression>, body: Vec<Box<Expression>> },
+    UNAPPLIED_FUNC { body: Vec<Box<Expression>> },
     NOTANEXPR,
 }
 
@@ -39,6 +40,8 @@ impl Expression {
             (VAR_ASSIGN { varname: _, op: _, varval: _ },
                 VAR_ASSIGN { varname: _, op: _, varval: _ }) |
             (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
+            (APPLIED_FUNC { arg: _, body: _ }, APPLIED_FUNC { arg: _, body: _ }) |
+            (UNAPPLIED_FUNC { body: _ }, UNAPPLIED_FUNC { body: _ }) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
         }
@@ -64,8 +67,10 @@ impl Display for Expression {
                 { f.write_str(&*format!("?<-{}", varname)) }
             BLOCK { exprs } =>
                 { f.write_str(&*format!("[[{:?}]]", exprs)) }
-            APPLICATION { arg: appliand, body: applicant } =>
-                { f.write_str(&*format!("{}=>{:?}", appliand, applicant)) }
+            APPLIED_FUNC { arg, body } =>
+                { f.write_str(&*format!("{}=>{:?}", arg, body)) }
+            UNAPPLIED_FUNC { body } =>
+                { f.write_str(&*format!("?=>{:?}", body)) }
         };
     }
 }
@@ -191,8 +196,14 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 self.process_assignment(str)
             }
-            IT => { self.cursor.step_fwd(); VAR_RAW { varname: String::from("_it") } }
-            TI => { self.cursor.step_fwd(); VAR_RAW { varname: String::from("_ti") } }
+            IT => {
+                self.cursor.step_fwd();
+                VAR_RAW { varname: String::from("_it") }
+            }
+            TI => {
+                self.cursor.step_fwd();
+                VAR_RAW { varname: String::from("_ti") }
+            }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
@@ -203,6 +214,10 @@ impl Parser<'_> {
                 self.assert_curr_is(RPAREN);
                 self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
+            }
+            BAR => {
+                self.cursor.step_fwd();
+                UNAPPLIED_FUNC { body: self.accumulate_exprs_until(BAR) }
             }
             LBRACE => { self.process_code_block() }
             AT => { self.process_application() }
@@ -215,6 +230,44 @@ impl Parser<'_> {
                 NOTANEXPR
             }
         };
+    }
+
+    fn accumulate_exprs_until(&mut self, stop_symbol: TokenType) -> Vec<Box<Expression>> {
+        let mut exprs = vec![];
+        while self.can_consume() && !self.curr_in(&[stop_symbol.clone()]) {
+            exprs.push(Box::new(self.build_expression()));
+        }
+        self.assert_curr_is(stop_symbol);
+        self.cursor.step_fwd();
+        exprs
+    }
+
+    fn process_code_block(&mut self) -> Expression {
+        self.cursor.step_fwd();
+        BLOCK { exprs: self.accumulate_exprs_until(RBRACE) }
+    }
+
+    fn process_application(&mut self) -> Expression {
+        let arg = match self.exprs.pop() {
+            None => {
+                self.scribe.annotate_error(Error::on_line(
+                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: AT }));
+                return NOTANEXPR;
+            }
+            Some(ex) => { Box::new(ex) }
+        };
+        self.cursor.step_fwd();
+        if self.curr_in(&[IDENTIFIER(String::new())]) {
+            return APPLIED_FUNC { arg, body: vec![Box::new(self.primary())] };
+        }
+        if !self.curr_in(&[BAR]) {
+            self.scribe.annotate_error(Error::on_line(
+                self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
+            ));
+            return NOTANEXPR;
+        }
+        self.cursor.step_fwd();
+        APPLIED_FUNC { arg, body: self.accumulate_exprs_until(BAR) }
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {
@@ -238,43 +291,6 @@ impl Parser<'_> {
         VAR_RAW { varname: str.clone() }
     }
 
-    fn process_code_block(&mut self) -> Expression {
-        let mut exprs = vec![];
-        self.cursor.step_fwd();
-        while self.can_consume() && !self.curr_in(&[RBRACE]) {
-            exprs.push(Box::new(self.build_expression()));
-        }
-        self.assert_curr_is(RBRACE);
-        self.cursor.step_fwd();
-        BLOCK { exprs }
-    }
-
-    fn process_application(&mut self) -> Expression {
-        let arg = match self.exprs.pop() {
-            None => {
-                self.scribe.annotate_error(Error::on_line(
-                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: AT }));
-                return NOTANEXPR;
-            }
-            Some(ex) => { Box::new(ex) }
-        };
-        self.cursor.step_fwd();
-        if !self.curr_in(&[BAR]) {
-            self.scribe.annotate_error(Error::on_line(
-                self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
-            ));
-            return NOTANEXPR;
-        }
-        self.cursor.step_fwd();
-        // for now, simply accept applicable. we will store applicable on vars later so also check that when we do
-        let mut body = vec![];
-        while self.can_consume() && !self.curr_in(&[BAR]) {
-            body.push(Box::new(self.build_expression()));
-        }
-        self.assert_curr_is(BAR);
-        self.cursor.step_fwd();
-        APPLICATION { arg, body }
-    }
 
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
         if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
@@ -297,6 +313,8 @@ impl Parser<'_> {
     }
 
     fn curr_in(&self, ttypes: &[TokenType]) -> bool {
-        self.can_consume() && ttypes.contains(&self.read_curr().ttype)
+        self.can_consume() && ttypes.iter().any(
+            |tt| self.read_curr().type_equals(tt)
+        )
     }
 }

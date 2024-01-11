@@ -1,11 +1,11 @@
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::{Display, Formatter};
-use std::ops::Neg;
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::{Neg};
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, NOTAVAL, STRING};
+use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, LAMBDA, NOTAVAL, OPTION, STRING};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -52,8 +52,8 @@ impl Scope {
         self
     }
 
-    pub fn read(&self, varname: &String) -> Option<Value> {
-        if let Some(val) = self.env.get(varname) { return Some(val.clone()); }
+    pub fn read(&self, varname: &String) -> Option<&Value> {
+        if let Some(val) = self.env.get(varname) { return Some(val); }
         if let Some(scope) = &self.child_scope { return scope.read(varname); }
         None
     }
@@ -80,7 +80,7 @@ impl Scope {
             return ERR;
         }
         self.env.insert(varname.clone(), val_to_write.clone());
-        val_to_write.clone()
+        val_to_write
     }
 
     fn write(&mut self, varname: &String, varval: Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
@@ -89,29 +89,62 @@ impl Scope {
     }
 }
 
-#[derive(Debug)]
 #[derive(Clone)]
-#[derive(PartialEq, PartialOrd)]
 pub enum Value {
     INTEGER(i32),
     FLOAT(f64),
     STRING(String),
     BOOLEAN(bool),
+    LAMBDA(Vec<Box<Expression>>),
+    OPTION(Option<Box<Self>>),
+    ASSOCIATION(HashMap<Box<Vec<Self>>, Box<Vec<Self>>>),
     ERR,
     NOTAVAL,
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (INTEGER(i), INTEGER(j)) => i == j,
+            (FLOAT(i), FLOAT(j)) => i == j,
+            (STRING(i), STRING(j)) => i == j,
+            (BOOLEAN(i), BOOLEAN(j)) => i == j,
+            (OPTION(i), OPTION(j)) => {
+                if let Some(I) = i {
+                    if let Some(J) = j {
+                        return I.eq(J);
+                    } else { false }
+                } else { false }
+            }
+            (NOTAVAL, NOTAVAL) => true,
+            _ => false
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (INTEGER(i), INTEGER(j)) => Some(i.cmp(j)),
+            (FLOAT(i), FLOAT(j)) => {
+                if i > j { return Some(Ordering::Greater); } else if i < j { return Some(Ordering::Less); }
+                Some(Ordering::Equal)
+            }
+            (STRING(i), STRING(j)) => Some(i.cmp(j)),
+            _ => None
+        }
+    }
+}
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            INTEGER(int) => { f.write_str(&*int.to_string()) }
-            FLOAT(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract()>0.0 {""} else {".0"})) }
-            STRING(str) => { f.write_str(str) }
-            BOOLEAN(boo) => { f.write_str(&*boo.to_string()) }
-            NOTAVAL => { f.write_str("no input.") }
-            _ => { f.write_str("ERR") }
-        }
+        self.display_and_debug(f)
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.display_and_debug(f)
     }
 }
 
@@ -133,6 +166,18 @@ fn print_eol(scope: &mut Scope, line: &usize) -> Value {
 
 #[allow(non_snake_case)]
 impl Value {
+    fn display_and_debug(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            INTEGER(int) => { f.write_str(&*int.to_string()) }
+            FLOAT(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
+            STRING(str) => { f.write_str(str) }
+            BOOLEAN(boo) => { f.write_str(&*boo.to_string()) }
+            LAMBDA(_) => { f.write_str("lambda") }
+            NOTAVAL => { f.write_str("no input.") }
+            _ => { f.write_str("ERR") }
+        }
+    }
+
     pub fn type_equals(&self, other: &Value) -> bool {
         match (self, other) {
             (INTEGER(_), INTEGER(_)) |
@@ -160,7 +205,7 @@ impl Value {
         }
     }
 
-    fn print_it(&self, curr_line: usize, scope: &mut Scope, tag: Option<&Box<Expression>>) -> &Value {
+    fn print_it(&self, curr_line: usize, scope: &mut Scope, tag: Option<&Box<Expression>>) {
         let tag = match tag {
             Some(boxx)
             => {
@@ -180,7 +225,6 @@ impl Value {
         let start_new_line = scope.last_print_line != curr_line;
         scope.last_print_line = curr_line;
         if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
-        &self
     }
 
     fn minus_them(&self, other: &Value) -> Value {
@@ -276,16 +320,30 @@ fn eval_child_exprs(exprs: &Vec<Box<Expression>>, scope: &mut Scope, es: &mut Er
 
 fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
-        Expression::APPLICATION { arg, body} => {
-            let it = eval_expr(arg, scope, scribe);
-            eval_child_exprs(body, scope, scribe, it, NOTAVAL)
+        Expression::UNAPPLIED_FUNC { body } => {
+            LAMBDA(body.iter().map(|ex| ex.clone().into()).collect())
         }
-        Expression::BLOCK { exprs} => { eval_child_exprs(exprs, scope, scribe, NOTAVAL, NOTAVAL) }
+        Expression::APPLIED_FUNC { arg, body } => {
+            let it = eval_expr(arg, scope, scribe);
+            if body.len() != 1 { return eval_child_exprs(body, scope, scribe, it, NOTAVAL); }
+            let maybe_containing_function = body.get(0).unwrap().as_ref();
+            let exprs = match maybe_containing_function {
+                VAR_RAW { varname } => {
+                    match scope.read(&varname).unwrap() {
+                        LAMBDA(lambda_body) => { lambda_body.clone() }
+                        _ => { body.clone() }
+                    }
+                }
+                _ => body.clone()
+            };
+            return eval_child_exprs(&exprs, scope, scribe, it, NOTAVAL);
+        }
+        Expression::BLOCK { exprs } => { eval_child_exprs(exprs, scope, scribe, NOTAVAL, NOTAVAL) }
         Expression::NOTANEXPR => { NOTAVAL }
         Expression::GROUPING { expr } => { eval_expr(expr, scope, scribe) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
             let val = eval_expr(varval, scope, scribe);
-            scope.write(varname, val, op, scribe).clone()
+            scope.write(varname, val, op, scribe)
         }
         VAR_RAW { varname } => {
             match scope.read(varname) {
@@ -294,7 +352,7 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
                                                          ErrorType::UNASSIGNEDVAR { varname: varname.clone() }));
                     ERR
                 }
-                Some(val) => { val }
+                Some(val) => { val.clone() }
             }
         }
 
@@ -316,7 +374,8 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
                 BANG => { expr.bang_it() }
                 MINUS => { expr.minus_it() }
                 DOLLAR => {
-                    expr.print_it(op.line, scope, None).clone()
+                    expr.print_it(op.line, scope, None);
+                    expr
                 }
                 _ => { ERR }
             }
@@ -327,7 +386,10 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
             let erhs = eval_expr(rhs, scope, scribe);
 
             match op.ttype {
-                DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }
+                DOLLAR => {
+                    elhs.print_it(op.line, scope, Some(rhs));
+                    elhs
+                }
                 MINUS => { elhs.minus_them(&erhs) }
                 PLUS => { elhs.plus_them(&erhs) }
                 MUL => { elhs.mul_them(&erhs) }
@@ -343,3 +405,4 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
         }
     }
 }
+

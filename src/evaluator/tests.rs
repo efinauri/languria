@@ -39,7 +39,7 @@ mod tests {
             &mut scope,
             &mut es);
         dbg!(&v);
-        assert_eq!(scope.read(&String::from("x")), Some(Value::INTEGER(2)));
+        assert_eq!(scope.read(&String::from("x")), Some(&Value::INTEGER(2)));
         assert_eq!(v, BOOLEAN(true));
     }
 }
