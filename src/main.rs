@@ -84,7 +84,8 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut S
         tokens.iter().for_each(|tok| println!("{}", tok));
     }
     let mut parser = parser::Parser::from_tokens(tokens.to_owned(), es);
-    let exprs = parser.parse();
+    parser.parse();
+    let exprs = parser.into_expressions();
     if es.has_errors() || exprs.is_empty() {
         es.clear_errors();
         return;

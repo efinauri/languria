@@ -27,6 +27,7 @@ pub enum TokenType {
     RPAREN,
     LBRACE,
     RBRACE,
+    BAR,
     // binary ops
     MINUS,
     PLUS,
@@ -91,7 +92,7 @@ impl Token {
         Token { ttype, line: 0 }
     }
 
-    fn new(ttype: TokenType, line: usize) -> Token {
+    pub(crate) fn new(ttype: TokenType, line: usize) -> Token {
         Token {
             ttype,
             line,
@@ -254,6 +255,7 @@ impl<'a> Lexer<'_> {
                 '(' => LPAREN,
                 '{' => LBRACE,
                 '}' => RBRACE,
+                '|' => BAR,
                 ',' => COMMA,
                 '.' => DOT,
                 '?' => QUESTIONMARK,

@@ -89,15 +89,6 @@ impl Scope {
     }
 }
 
-pub fn evaluate_expressions(exprs: Vec<Expression>, x: &mut Scope, es: &mut ErrorScribe) -> Value {
-    let mut ret = NOTAVAL;
-    for expr in exprs {
-        let eval = evaluate_expression(&expr, x, es);
-        if eval != NOTAVAL { ret = eval; }
-    }
-    ret
-}
-
 #[derive(Debug)]
 #[derive(Clone)]
 #[derive(PartialEq, PartialOrd)]
@@ -260,21 +251,40 @@ impl Value {
 }
 
 
-fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
+pub fn evaluate_expressions(exprs: Vec<Expression>, scope: &mut Scope, es: &mut ErrorScribe) -> Value {
+    let mut ret = NOTAVAL;
+    for expr in exprs {
+        let eval = eval_expr(&expr, scope, es);
+        if eval != NOTAVAL { ret = eval; }
+    }
+    ret
+}
+
+
+fn eval_child_exprs(exprs: &Vec<Box<Expression>>, scope: &mut Scope, es: &mut ErrorScribe, it: Value, ti: Value) -> Value {
+    scope.attach_child_scope();
+    scope.write(&String::from("_it"), it, &Token::new(INTO, scope.curr_line), es);
+    scope.write(&String::from("_ti"), ti, &Token::new(INTO, scope.curr_line), es);
+    let mut ret = NOTAVAL;
+    for expr in exprs {
+        let eval = eval_expr(&expr, scope, es);
+        if eval != NOTAVAL { ret = eval; }
+    }
+    scope.detach_child_scope();
+    ret
+}
+
+fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
     match expr {
-        Expression::BLOCK { exprs} => {
-            scope.attach_child_scope();
-            let mut last_val = NOTAVAL;
-            for ex in exprs {
-                last_val = evaluate_expression(ex, scope, scribe);
-            }
-            scope.detach_child_scope();
-            last_val
+        Expression::APPLICATION { arg, body} => {
+            let it = eval_expr(arg, scope, scribe);
+            eval_child_exprs(body, scope, scribe, it, NOTAVAL)
         }
+        Expression::BLOCK { exprs} => { eval_child_exprs(exprs, scope, scribe, NOTAVAL, NOTAVAL) }
         Expression::NOTANEXPR => { NOTAVAL }
-        Expression::GROUPING { expr } => { evaluate_expression(expr, scope, scribe) }
+        Expression::GROUPING { expr } => { eval_expr(expr, scope, scribe) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
-            let val = evaluate_expression(varval, scope, scribe);
+            let val = eval_expr(varval, scope, scribe);
             scope.write(varname, val, op, scribe).clone()
         }
         VAR_RAW { varname } => {
@@ -301,7 +311,7 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
         }
 
         Expression::UNARY { op, expr } => {
-            let expr = evaluate_expression(expr, scope, scribe);
+            let expr = eval_expr(expr, scope, scribe);
             match op.ttype {
                 BANG => { expr.bang_it() }
                 MINUS => { expr.minus_it() }
@@ -313,8 +323,8 @@ fn evaluate_expression(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorS
         }
 
         Expression::BINARY { lhs, op, rhs } => {
-            let elhs = evaluate_expression(lhs, scope, scribe);
-            let erhs = evaluate_expression(rhs, scope, scribe);
+            let elhs = eval_expr(lhs, scope, scribe);
+            let erhs = eval_expr(rhs, scope, scribe);
 
             match op.ttype {
                 DOLLAR => { elhs.print_it(op.line, scope, Some(rhs)).clone() }

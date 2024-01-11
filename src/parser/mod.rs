@@ -18,6 +18,7 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
     BLOCK { exprs: Vec<Box<Expression>> },
+    APPLICATION { arg: Box<Expression>, body: Vec<Box<Expression>> },
     NOTANEXPR,
 }
 
@@ -47,24 +48,25 @@ impl Expression {
 
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self {
+        return match &self {
             LITERAL { value } =>
-                { f.write_str(value.to_string().as_str()).unwrap(); }
+                { f.write_str(value.to_string().as_str()) }
             UNARY { op, expr } =>
-                { f.write_str(&*format!("({} {})", op, expr)).unwrap(); }
+                { f.write_str(&*format!("({} {})", op, expr)) }
             BINARY { lhs, op, rhs } =>
-                { f.write_str(&*format!("{} <{} {}>", op, lhs, rhs)).unwrap(); }
+                { f.write_str(&*format!("{} <{} {}>", op, lhs, rhs)) }
             GROUPING { expr } =>
-                { f.write_str(&*format!("(group {})", expr)).unwrap(); }
-            NOTANEXPR => { let _ = f.write_str("ERR"); }
+                { f.write_str(&*format!("(group {})", expr)) }
+            NOTANEXPR => { f.write_str("ERR") }
             VAR_ASSIGN { varname, op: _, varval } =>
-                { f.write_str(&*format!("{}<-{}", varname, varval)).unwrap(); }
+                { f.write_str(&*format!("{}<-{}", varname, varval)) }
             VAR_RAW { varname } =>
-                { f.write_str(&*format!("?<-{}", varname)).unwrap() }
+                { f.write_str(&*format!("?<-{}", varname)) }
             BLOCK { exprs } =>
-                { f.write_str(&*format!("[[{:?}]]", exprs)).unwrap() }
-        }
-        Ok(())
+                { f.write_str(&*format!("[[{:?}]]", exprs)) }
+            APPLICATION { arg: appliand, body: applicant } =>
+                { f.write_str(&*format!("{}=>{:?}", appliand, applicant)) }
+        };
     }
 }
 
@@ -79,6 +81,7 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: Cursor,
     scribe: &'a mut ErrorScribe,
+    exprs: Vec<Expression>,
 }
 
 impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
@@ -87,19 +90,18 @@ impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
     fn arr(&self) -> &Vec<Token> { &self.tokens }
 }
 
-
 impl Parser<'_> {
+    pub fn into_expressions(self) -> Vec<Expression> { self.exprs }
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser { tokens, cursor: Cursor::new(), scribe }
+        Parser { tokens, cursor: Cursor::new(), scribe, exprs: vec![] }
     }
 
-    pub fn parse(&mut self) -> Vec<Expression> {
-        let mut expressions = vec![];
-        if self.tokens.is_empty() { return expressions; }
+    pub fn parse(&mut self) {
+        if self.tokens.is_empty() { return; }
         while self.can_consume() {
-            expressions.push(self.build_expression())
+            let expr = self.build_expression();
+            self.exprs.push(expr);
         }
-        expressions
     }
 
     fn build_expression(&mut self) -> Expression { self.equality() }
@@ -189,6 +191,8 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 self.process_assignment(str)
             }
+            IT => { self.cursor.step_fwd(); VAR_RAW { varname: String::from("_it") } }
+            TI => { self.cursor.step_fwd(); VAR_RAW { varname: String::from("_ti") } }
             FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
@@ -201,7 +205,7 @@ impl Parser<'_> {
                 GROUPING { expr: Box::new(expr) }
             }
             LBRACE => { self.process_code_block() }
-
+            AT => { self.process_application() }
             _ => {
                 self.scribe.annotate_error(Error::on_line(
                     self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN {
@@ -243,6 +247,33 @@ impl Parser<'_> {
         self.assert_curr_is(RBRACE);
         self.cursor.step_fwd();
         BLOCK { exprs }
+    }
+
+    fn process_application(&mut self) -> Expression {
+        let arg = match self.exprs.pop() {
+            None => {
+                self.scribe.annotate_error(Error::on_line(
+                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: AT }));
+                return NOTANEXPR;
+            }
+            Some(ex) => { Box::new(ex) }
+        };
+        self.cursor.step_fwd();
+        if !self.curr_in(&[BAR]) {
+            self.scribe.annotate_error(Error::on_line(
+                self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
+            ));
+            return NOTANEXPR;
+        }
+        self.cursor.step_fwd();
+        // for now, simply accept applicable. we will store applicable on vars later so also check that when we do
+        let mut body = vec![];
+        while self.can_consume() && !self.curr_in(&[BAR]) {
+            body.push(Box::new(self.build_expression()));
+        }
+        self.assert_curr_is(BAR);
+        self.cursor.step_fwd();
+        APPLICATION { arg, body }
     }
 
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
