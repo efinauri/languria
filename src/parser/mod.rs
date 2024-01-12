@@ -20,6 +20,7 @@ pub enum Expression {
     VAR_RAW { varname: String },
     BLOCK { exprs: Vec<Box<Expression>>, applicable: bool },
     APPLICATION { arg: Box<Expression>, body: Box<Expression> },
+    RETURN_EXPR { expr: Box<Expression> },
     NOTANEXPR,
 }
 
@@ -68,6 +69,8 @@ impl Display for Expression {
                 { f.write_str(&*format!("[{}[{:?}]]", if *applicable { "(?)" } else { "" }, exprs)) }
             APPLICATION { arg, body } =>
                 { f.write_str(&*format!("{}=>{:?}", arg, body)) }
+            RETURN_EXPR { expr } =>
+                { f.write_str(&*format!("return {}", expr)) }
         };
     }
 }
@@ -190,6 +193,10 @@ impl Parser<'_> {
         }
         let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
         return match ttype {
+            RETURN => {
+                self.cursor.step_fwd();
+                RETURN_EXPR { expr: Box::new(self.build_expression()) }
+            }
             IDENTIFIER(str) => {
                 self.cursor.step_fwd();
                 self.process_assignment(str)

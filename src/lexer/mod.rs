@@ -25,6 +25,8 @@ pub enum TokenType {
     //grouping
     LPAREN,
     RPAREN,
+    LBRACKET,
+    RBRACKET,
     LBRACE,
     RBRACE,
     // binary ops
@@ -59,10 +61,12 @@ pub enum TokenType {
     INTO,
     // others
     AT,
+    COLON,
     COMMA,
     DOT,
-    NOTATOKEN,
     QUESTIONMARK,
+    //
+    NOTATOKEN,
     EOF,
 }
 lazy_static! {
@@ -250,11 +254,14 @@ impl<'a> Lexer<'_> {
                     self.line_number += 1;
                     continue;
                 }
-                ')' => RPAREN,
                 '(' => LPAREN,
+                ')' => RPAREN,
                 '{' => LBRACE,
                 '}' => RBRACE,
+                '[' => LBRACKET,
+                ']' => RBRACKET,
                 ',' => COMMA,
+                ':' => COLON,
                 '.' => DOT,
                 '?' => QUESTIONMARK,
                 '@' => AT,

@@ -94,7 +94,8 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut 
             println!("{}", ex);
         }
     }
-    let value = evaluator::evaluate_expressions(exprs, es, env);
+    let input_exprs = exprs.iter().map(|ex|Box::new(ex.clone())).collect();
+    let value = evaluator::evaluate_expressions(&input_exprs, es, env);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {

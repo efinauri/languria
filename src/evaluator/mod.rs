@@ -1,10 +1,10 @@
 use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::Neg;
+use std::ops::{Deref, Neg};
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, LAMBDA, NOTAVAL, OPTION, STRING};
+use crate::evaluator::Value::{BOOLEAN, ERR, FLOAT, INTEGER, LAMBDA, NOTAVAL, OPTION, RETURNVAL, STRING};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -19,7 +19,7 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new() -> Environment { Environment { scopes: vec![Scope::new()], curr_line: 0, last_print_line: 0 } }
+    pub fn new() -> Environment { Environment { scopes: vec![], curr_line: 0, last_print_line: 0 } }
     pub fn create_scope(&mut self) {
         let scope = Scope::new();
         self.scopes.push(scope);
@@ -98,6 +98,7 @@ pub enum Value {
     LAMBDA(Vec<Box<Expression>>),
     OPTION(Option<Box<Self>>),
     ASSOCIATION(HashMap<Box<Vec<Self>>, Box<Vec<Self>>>),
+    RETURNVAL(Box<Self>),
     ERR,
     NOTAVAL,
 }
@@ -295,21 +296,19 @@ impl Value {
 }
 
 
-pub fn evaluate_expressions(exprs: Vec<Expression>, es: &mut ErrorScribe, env: &mut Environment) -> Value {
-    let mut result = NOTAVAL;
-    for expr in exprs {
-        let eval = eval_expr(&expr, env, es);
-        if eval != NOTAVAL { result = eval; }
-    }
-    result
-}
-
-fn eval_child_exprs(exprs: &Vec<Box<Expression>>, env: &mut Environment, es: &mut ErrorScribe) -> Value {
+pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment) -> Value {
     env.create_scope();
     let mut result = NOTAVAL;
     for expr in exprs {
         let eval = eval_expr(&expr, env, es);
-        if eval != NOTAVAL { result = eval; }
+        match eval {
+            NOTAVAL => { continue; }
+            RETURNVAL(val) => {
+                env.destroy_scope();
+                return val.deref().clone();
+            }
+            _ => { result = eval; }
+        }
     }
     env.destroy_scope();
     result
@@ -327,13 +326,16 @@ fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut Erro
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
+        Expression::RETURN_EXPR { expr } => {
+            RETURNVAL(Box::new(eval_expr(expr, env, scribe)))
+        }
         Expression::APPLICATION { arg, body } => {
             let it = eval_expr(arg, env, scribe);
             eval_application(body, env, scribe, it, NOTAVAL)
         }
         Expression::BLOCK { exprs, applicable } => {
             if *applicable && !env.curr_scope().is_application { return LAMBDA(exprs.to_owned()); }
-            eval_child_exprs(exprs, env, scribe)
+            evaluate_expressions(exprs, scribe, env)
         }
         Expression::NOTANEXPR => { NOTAVAL }
         Expression::GROUPING { expr } => { eval_expr(expr, env, scribe) }
@@ -350,8 +352,9 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 }
                 Some(val) => match val {
                     LAMBDA(exprs) => {
-                        eval_expr(&Expression::BLOCK {exprs: exprs.clone(), applicable: true}, env, scribe)}
-                    _ => { val.clone()}
+                        eval_expr(&Expression::BLOCK { exprs: exprs.clone(), applicable: true }, env, scribe)
+                    }
+                    _ => { val.clone() }
                 }
             }
         }

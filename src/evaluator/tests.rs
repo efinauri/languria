@@ -12,7 +12,7 @@ mod tests {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let v = evaluate_expressions(
-            vec![],
+            &vec![],
             &mut es,
             &mut env);
         dbg!(&v);
@@ -25,17 +25,17 @@ mod tests {
         let mut env = Environment::new();
         let val = LITERAL { value: Token::debug(INTEGER(2)) };
         let v = evaluate_expressions(
-            vec![
-                VAR_ASSIGN {
+            &vec![
+                Box::new(VAR_ASSIGN {
                     varname: "x".to_string(),
                     op: Token::debug(ASSIGN),
                     varval: Box::new(val.clone()),
-                },
-                BINARY {
+                }),
+                Box::new(BINARY {
                     lhs: Box::new(VAR_RAW { varname: "x".parse().unwrap() }),
                     op: Token::debug(EQ),
                     rhs: Box::new(val.clone()),
-                },
+                }),
             ],
             &mut es,
             &mut env);
