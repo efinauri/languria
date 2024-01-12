@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::vec;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
@@ -17,9 +18,8 @@ pub enum Expression {
     GROUPING { expr: Box<Expression> },
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
-    BLOCK { exprs: Vec<Box<Expression>> },
-    APPLIED_FUNC { arg: Box<Expression>, body: Vec<Box<Expression>> },
-    UNAPPLIED_FUNC { body: Vec<Box<Expression>> },
+    BLOCK { exprs: Vec<Box<Expression>>, applicable: bool },
+    APPLICATION { arg: Box<Expression>, body: Box<Expression> },
     NOTANEXPR,
 }
 
@@ -27,7 +27,7 @@ impl Expression {
     #[allow(dead_code)]
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
-            (BLOCK { exprs }, _) => {
+            (BLOCK { exprs, applicable }, _) => {
                 match exprs.last() {
                     None => { false }
                     Some(e) => { e.type_equals(other) }
@@ -40,8 +40,7 @@ impl Expression {
             (VAR_ASSIGN { varname: _, op: _, varval: _ },
                 VAR_ASSIGN { varname: _, op: _, varval: _ }) |
             (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
-            (APPLIED_FUNC { arg: _, body: _ }, APPLIED_FUNC { arg: _, body: _ }) |
-            (UNAPPLIED_FUNC { body: _ }, UNAPPLIED_FUNC { body: _ }) |
+            (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
         }
@@ -65,12 +64,10 @@ impl Display for Expression {
                 { f.write_str(&*format!("{}<-{}", varname, varval)) }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)) }
-            BLOCK { exprs } =>
-                { f.write_str(&*format!("[[{:?}]]", exprs)) }
-            APPLIED_FUNC { arg, body } =>
+            BLOCK { exprs , applicable} =>
+                { f.write_str(&*format!("[{}[{:?}]]", if *applicable {"(?)"} else {""}, exprs)) }
+            APPLICATION { arg, body } =>
                 { f.write_str(&*format!("{}=>{:?}", arg, body)) }
-            UNAPPLIED_FUNC { body } =>
-                { f.write_str(&*format!("?=>{:?}", body)) }
         };
     }
 }
@@ -81,6 +78,7 @@ const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
 const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
+const APPLICABLE_TOKENS: [TokenType; 2] = [IT, TI];
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
@@ -215,10 +213,6 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
-            BAR => {
-                self.cursor.step_fwd();
-                UNAPPLIED_FUNC { body: self.accumulate_exprs_until(BAR) }
-            }
             LBRACE => { self.process_code_block() }
             AT => { self.process_application() }
             _ => {
@@ -232,19 +226,18 @@ impl Parser<'_> {
         };
     }
 
-    fn accumulate_exprs_until(&mut self, stop_symbol: TokenType) -> Vec<Box<Expression>> {
-        let mut exprs = vec![];
-        while self.can_consume() && !self.curr_in(&[stop_symbol.clone()]) {
-            exprs.push(Box::new(self.build_expression()));
-        }
-        self.assert_curr_is(stop_symbol);
-        self.cursor.step_fwd();
-        exprs
-    }
 
     fn process_code_block(&mut self) -> Expression {
         self.cursor.step_fwd();
-        BLOCK { exprs: self.accumulate_exprs_until(RBRACE) }
+        let mut exprs = vec![];
+        let mut applicable= false;
+        while self.can_consume() && !self.curr_in(&[RBRACE]) {
+            if self.curr_in(&APPLICABLE_TOKENS) { applicable = true}
+            exprs.push(Box::new(self.build_expression()));
+        }
+        self.assert_curr_is(RBRACE);
+        self.cursor.step_fwd();
+        BLOCK { exprs, applicable }
     }
 
     fn process_application(&mut self) -> Expression {
@@ -257,17 +250,19 @@ impl Parser<'_> {
             Some(ex) => { Box::new(ex) }
         };
         self.cursor.step_fwd();
-        if self.curr_in(&[IDENTIFIER(String::new())]) {
-            return APPLIED_FUNC { arg, body: vec![Box::new(self.primary())] };
-        }
-        if !self.curr_in(&[BAR]) {
-            self.scribe.annotate_error(Error::on_line(
-                self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
-            ));
-            return NOTANEXPR;
-        }
-        self.cursor.step_fwd();
-        APPLIED_FUNC { arg, body: self.accumulate_exprs_until(BAR) }
+        APPLICATION { arg, body: Box::new(self.build_expression()) }
+
+        // if self.curr_in(&[IDENTIFIER(String::new())]) {
+        //     return APPLIED_FUNC { arg, body: vec![Box::new(self.primary())] };
+        // }
+        // if !self.curr_in(&[BAR]) {
+        //     self.scribe.annotate_error(Error::on_line(
+        //         self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
+        //     ));
+        //     return NOTANEXPR;
+        // }
+        // self.cursor.step_fwd();
+        // APPLIED_FUNC { arg, body: self.accumulate_exprs_until(BAR) }
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {

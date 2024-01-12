@@ -255,7 +255,6 @@ impl<'a> Lexer<'_> {
                 '(' => LPAREN,
                 '{' => LBRACE,
                 '}' => RBRACE,
-                '|' => BAR,
                 ',' => COMMA,
                 '.' => DOT,
                 '?' => QUESTIONMARK,

@@ -4,7 +4,7 @@ mod tests {
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
     use crate::parser::{LITERAL, Parser};
-    use crate::parser::Expression::{APPLIED_FUNC, BINARY, GROUPING, NOTANEXPR, UNARY, VAR_ASSIGN, VAR_RAW};
+    use crate::parser::Expression::{APPLICATION, BINARY, GROUPING, NOTANEXPR, UNARY, VAR_ASSIGN, VAR_RAW};
     use crate::shared::WalksCollection;
 
     #[test]
@@ -235,16 +235,16 @@ mod tests {
             vec![
                 Token::debug(INTEGER(3)),
                 Token::debug(AT),
-                Token::debug(BAR),
+                Token::debug(LPAREN),
                 Token::debug(IT),
-                Token::debug(BAR),
+                Token::debug(RPAREN),
             ],
             &mut es);
         p.parse();
         let binding = p.into_expressions();
         let expr = binding.get(0).unwrap();
         dbg!(&expr);
-        assert!(expr.type_equals(&APPLIED_FUNC {
+        assert!(expr.type_equals(&APPLICATION {
             arg: Box::new(NOTANEXPR),
             body: vec![],
         }));
