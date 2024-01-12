@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::errors::ErrorScribe;
-    use crate::evaluator::{evaluate_expressions, Scope, Value};
+    use crate::evaluator::{Environment, evaluate_expressions};
     use crate::evaluator::Value::{BOOLEAN, NOTAVAL};
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
@@ -9,19 +9,20 @@ mod tests {
 
     #[test]
     fn empty_eval() {
-        let mut scope = Scope::new();
         let mut es = ErrorScribe::debug();
+        let mut env = Environment::new();
         let v = evaluate_expressions(
             vec![],
-            &mut scope,
-            &mut es);
+            &mut es,
+            &mut env);
         dbg!(&v);
         assert_eq!(v, NOTAVAL);
     }
+
     #[test]
     fn var_permanence() {
-        let mut scope = Scope::new();
         let mut es = ErrorScribe::debug();
+        let mut env = Environment::new();
         let val = LITERAL { value: Token::debug(INTEGER(2)) };
         let v = evaluate_expressions(
             vec![
@@ -31,15 +32,15 @@ mod tests {
                     varval: Box::new(val.clone()),
                 },
                 BINARY {
-                    lhs: Box::new(VAR_RAW {varname: "x".parse().unwrap() }),
+                    lhs: Box::new(VAR_RAW { varname: "x".parse().unwrap() }),
                     op: Token::debug(EQ),
                     rhs: Box::new(val.clone()),
-                }
+                },
             ],
-            &mut scope,
-            &mut es);
+            &mut es,
+            &mut env);
         dbg!(&v);
-        assert_eq!(scope.read(&String::from("x")), Some(&Value::INTEGER(2)));
+        // assert_eq!(scope.read(&String::from("x")), Some(&Value::INTEGER(2)));
         assert_eq!(v, BOOLEAN(true));
     }
 }

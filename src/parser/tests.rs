@@ -246,7 +246,7 @@ mod tests {
         dbg!(&expr);
         assert!(expr.type_equals(&APPLICATION {
             arg: Box::new(NOTANEXPR),
-            body: vec![],
+            body: Box::new(NOTANEXPR),
         }));
     }
 }

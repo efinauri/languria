@@ -1,7 +1,5 @@
 use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
-use std::env::var;
-use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Neg;
 
@@ -21,55 +19,57 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new() -> Environment { Environment { scopes: vec![], curr_line: 0, last_print_line: 0 } }
-    pub fn create_scope(&mut self) { self.scopes.push(Scope::new()) }
+    pub fn new() -> Environment { Environment { scopes: vec![Scope::new()], curr_line: 0, last_print_line: 0 } }
+    pub fn create_scope(&mut self) {
+        let scope = Scope::new();
+        self.scopes.push(scope);
+    }
     pub fn destroy_scope(&mut self) { self.scopes.pop(); }
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
-    pub fn curr_scope_mut(&mut self) -> &mut Scope { self.scopes.last().as_mut().unwrap() }
-    pub fn reset_print(&mut self) { self.last_print_line = 0; }
+    pub fn curr_scope_mut(&mut self) -> &mut Scope { self.scopes.iter_mut().last().unwrap() }
 
     pub fn read(&self, varname: &String) -> Option<&Value> {
-        for scope in &self.scopes.iter().rev() {
-            if let Some(val) = scope.env.get(varname) { Some(val.clone())}
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.variables.get(varname) { return Some(val); }
         }
         None
     }
     fn write(&mut self, varname: &String, varval: &Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
-        for scope in &mut self.scopes {
-            if scope.env.contains_key(varname) { return scope.write(varname, varval, op, scribe).clone(); }
+        let limit = self.scopes.len() - 1;
+        for (scope, i) in &mut self.scopes.iter_mut().zip(0..) {
+            if scope.variables.contains_key(varname) || i == limit {
+                return scope.write(varname, varval, op, scribe).clone();
+            }
         }
-        self.curr_scope_mut().write(varname, varval, op, scribe).clone()
+        NOTAVAL
     }
 }
 
 
 pub struct Scope {
-    env: HashMap<String, Value>,
+    variables: HashMap<String, Value>,
     entry_point: String,
     is_application: bool,
 }
 
 impl Scope {
-    pub fn register_entrypoint(&mut self, entry_point: &OsStr) {
-        self.entry_point = String::from(entry_point.to_str().unwrap());
-    }
     pub fn new() -> Scope {
         Scope {
-            env: Default::default(),
+            variables: Default::default(),
             entry_point: String::from("REPL"),
             is_application: false,
         }
     }
 
-    fn read(&self, varname: &String) -> Option<&Value> { self.env.get(varname) }
+    fn read(&self, varname: &String) -> Option<&Value> { self.variables.get(varname) }
 
-    fn write(&mut self, varname: &String, varval: &Value, op: &Token, scribe: &mut ErrorScribe) -> &Value {
+    fn write(&mut self, varname: &String, varval: &Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
         let old_val = &self.read(varname);
         let val_to_write = match old_val {
-            None => { varval }
+            None => { varval.clone() }
             Some(ov) => {
                 match op.ttype {
-                    ASSIGN | INTO => { varval }
+                    ASSIGN | INTO => { varval.clone() }
                     MINASSIGN => { varval.min_them(ov) }
                     MAXASSIGN => { varval.max_them(ov) }
                     PLUSASSIGN => { varval.plus_them(ov) }
@@ -84,11 +84,9 @@ impl Scope {
             scribe.annotate_error(Error::on_line(42, ErrorType::EXPECTEDTYPE));
             return ERR;
         }
-        self.env.insert(varname.clone(), val_to_write.clone());
-        val_to_write
+        self.variables.insert(varname.clone(), val_to_write.clone());
+        val_to_write.clone()
     }
-
-
 }
 
 #[derive(Clone)]
@@ -112,9 +110,9 @@ impl PartialEq for Value {
             (STRING(i), STRING(j)) => i == j,
             (BOOLEAN(i), BOOLEAN(j)) => i == j,
             (OPTION(i), OPTION(j)) => {
-                if let Some(I) = i {
-                    if let Some(J) = j {
-                        return I.eq(J);
+                if let Some(i) = i {
+                    if let Some(j) = j {
+                        return i.eq(j);
                     } else { false }
                 } else { false }
             }
@@ -158,10 +156,10 @@ fn num_as_bool(v: &Value) -> Value {
     };
 }
 
-fn print_eol(scope: &mut Scope, line: &usize) -> Value {
-    let start_new_line = scope.last_print_line != *line;
-    scope.last_print_line = *line;
-    let to_print = format!("[{}:{}]", scope.entry_point, line);
+fn print_eol(env: &mut Environment, line: &usize) -> Value {
+    let start_new_line = env.last_print_line != *line;
+    env.last_print_line = *line;
+    let to_print = format!("[{}:{}]", env.curr_scope().entry_point, line);
     if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
     NOTAVAL
 }
@@ -207,7 +205,7 @@ impl Value {
         }
     }
 
-    fn print_it(&self, curr_line: usize, scope: &mut Scope, tag: Option<&Box<Expression>>) {
+    fn print_it(&self, curr_line: usize, env: &mut Environment, tag: Option<&Box<Expression>>) {
         let tag = match tag {
             Some(boxx)
             => {
@@ -224,8 +222,8 @@ impl Value {
             }
             _ => String::new()
         };
-        let start_new_line = scope.last_print_line != curr_line;
-        scope.last_print_line = curr_line;
+        let start_new_line = env.last_print_line != curr_line;
+        env.last_print_line = curr_line;
         if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
     }
 
@@ -297,79 +295,70 @@ impl Value {
 }
 
 
-pub fn evaluate_expressions(exprs: Vec<Expression>, scope: &mut Scope, es: &mut ErrorScribe) -> Value {
-    let mut ret = NOTAVAL;
+pub fn evaluate_expressions(exprs: Vec<Expression>, es: &mut ErrorScribe, env: &mut Environment) -> Value {
+    let mut result = NOTAVAL;
     for expr in exprs {
-        let eval = eval_expr(&expr, scope, es);
-        if eval != NOTAVAL { ret = eval; }
+        let eval = eval_expr(&expr, env, es);
+        if eval != NOTAVAL { result = eval; }
     }
-    ret
+    result
 }
 
-
-fn eval_child_exprs(exprs: &Vec<Box<Expression>>, scope: &mut Scope, es: &mut ErrorScribe) -> Value {
-    let child_scope = scope.attach_child_scope();
-    let mut ret = NOTAVAL;
+fn eval_child_exprs(exprs: &Vec<Box<Expression>>, env: &mut Environment, es: &mut ErrorScribe) -> Value {
+    env.create_scope();
+    let mut result = NOTAVAL;
     for expr in exprs {
-        let eval = eval_expr(&expr, child_scope, es);
-        if eval != NOTAVAL { ret = eval; }
+        let eval = eval_expr(&expr, env, es);
+        if eval != NOTAVAL { result = eval; }
     }
-    scope.detach_child_scope();
+    env.destroy_scope();
+    result
+}
+
+fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut ErrorScribe, it: Value, ti: Value) -> Value {
+    env.create_scope();
+    env.curr_scope_mut().is_application = true;
+    env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
+    env.write(&String::from("_ti"), &ti, &Token::new(INTO, 0), es);
+    let ret = eval_expr(body, env, es);
+    env.destroy_scope();
     ret
 }
 
-fn eval_application(body: &Box<Expression>, scope: &mut Scope, es: &mut ErrorScribe, it: Value, ti: Value) -> Value {
-    let mut child_scope = scope.attach_child_scope();
-    child_scope.is_application = true;
-    child_scope.write(&String::from("_it"), it, &Token::new(INTO, 0), es);
-    child_scope.write(&String::from("_ti"), ti, &Token::new(INTO, 0), es);
-    let ret = eval_expr(body, child_scope, es);
-    scope.detach_child_scope();
-    ret
-}
-
-fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> Value {
+fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
         Expression::APPLICATION { arg, body } => {
-            let it = eval_expr(arg, scope, scribe);
-            eval_application(body, scope, scribe, it, NOTAVAL)
-            // if body.len() != 1 { return eval_child_exprs(body, scope, scribe, it, NOTAVAL); }
-            // let maybe_containing_function = body.get(0).unwrap().as_ref();
-            // let exprs = match maybe_containing_function {
-            //     VAR_RAW { varname } => {
-            //         match scope.read(&varname).unwrap() {
-            //             LAMBDA(lambda_body) => { lambda_body.clone() }
-            //             _ => { body.clone() }
-            //         }
-            //     }
-            //     _ => body.clone()
-            // };
-            // return eval_child_exprs(&exprs, scope, scribe, it, NOTAVAL);
+            let it = eval_expr(arg, env, scribe);
+            eval_application(body, env, scribe, it, NOTAVAL)
         }
         Expression::BLOCK { exprs, applicable } => {
-            if *applicable && !scope.is_application { return LAMBDA(exprs.to_owned()); }
-            eval_child_exprs(exprs, scope, scribe)
+            if *applicable && !env.curr_scope().is_application { return LAMBDA(exprs.to_owned()); }
+            eval_child_exprs(exprs, env, scribe)
         }
         Expression::NOTANEXPR => { NOTAVAL }
-        Expression::GROUPING { expr } => { eval_expr(expr, scope, scribe) }
+        Expression::GROUPING { expr } => { eval_expr(expr, env, scribe) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
-            let val = eval_expr(varval, scope, scribe);
-            scope.write(varname, val, op, scribe)
+            let val = eval_expr(varval, env, scribe);
+            env.write(varname, &val, op, scribe)
         }
         VAR_RAW { varname } => {
-            match scope.read(varname) {
+            match env.read(varname) {
                 None => {
-                    scribe.annotate_error(Error::on_line(scope.curr_line,
+                    scribe.annotate_error(Error::on_line(env.curr_line,
                                                          ErrorType::UNASSIGNEDVAR { varname: varname.clone() }));
                     ERR
                 }
-                Some(val) => { val.clone() }
+                Some(val) => match val {
+                    LAMBDA(exprs) => {
+                        eval_expr(&Expression::BLOCK {exprs: exprs.clone(), applicable: true}, env, scribe)}
+                    _ => { val.clone()}
+                }
             }
         }
 
         LITERAL { value } => {
             match &value.ttype {
-                EOLPRINT => print_eol(scope, &value.line),
+                EOLPRINT => print_eol(env, &value.line),
                 FALSE => BOOLEAN(false),
                 TRUE => BOOLEAN(true),
                 TokenType::STRING(str) => STRING(str.to_owned()),
@@ -380,12 +369,12 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
         }
 
         Expression::UNARY { op, expr } => {
-            let expr = eval_expr(expr, scope, scribe);
+            let expr = eval_expr(expr, env, scribe);
             match op.ttype {
                 BANG => { expr.bang_it() }
                 MINUS => { expr.minus_it() }
                 DOLLAR => {
-                    expr.print_it(op.line, scope, None);
+                    expr.print_it(op.line, env, None);
                     expr
                 }
                 _ => { ERR }
@@ -393,12 +382,12 @@ fn eval_expr(expr: &Expression, scope: &mut Scope, scribe: &mut ErrorScribe) -> 
         }
 
         Expression::BINARY { lhs, op, rhs } => {
-            let elhs = eval_expr(lhs, scope, scribe);
-            let erhs = eval_expr(rhs, scope, scribe);
+            let elhs = eval_expr(lhs, env, scribe);
+            let erhs = eval_expr(rhs, env, scribe);
 
             match op.ttype {
                 DOLLAR => {
-                    elhs.print_it(op.line, scope, Some(rhs));
+                    elhs.print_it(op.line, env, Some(rhs));
                     elhs
                 }
                 MINUS => { elhs.minus_them(&erhs) }

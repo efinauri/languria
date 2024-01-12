@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
-use crate::evaluator::Scope;
+use crate::evaluator::Environment;
 
 mod lexer;
 mod errors;
@@ -33,9 +33,8 @@ fn interpret_file(filename: &str, verbose: bool) {
     file.read_to_string(&mut content)
         .expect("could not read file contents.");
     let mut es = ErrorScribe::from_termination_policy(STRICT);
-    let mut main_scope = Scope::new();
-    main_scope.register_entrypoint(path.file_name().unwrap());
-    interpret_instructions(&mut es, content, &mut main_scope, verbose);
+    let mut env = Environment::new();
+    interpret_instructions(&mut es, content, &mut env, verbose);
 }
 
 fn clear_terminal() {
@@ -47,7 +46,7 @@ fn clear_terminal() {
 fn serve_repl() {
     let mut verbose = false;
     let mut es = ErrorScribe::from_termination_policy(PERMISSIVE);
-    let mut main_scope = Scope::new();
+    let mut env = Environment::new();
     clear_terminal();
     println!("**START OF REPL** - q to quit, dbg to toggle debug mode");
     loop {
@@ -71,12 +70,11 @@ fn serve_repl() {
             println!("debug mode {}", if verbose { "ON" } else { "OFF" });
             continue;
         }
-        interpret_instructions(&mut es, user_input, &mut main_scope, verbose);
-        main_scope.reset_print();
+        interpret_instructions(&mut es, user_input, &mut env, verbose);
     }
 }
 
-fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut Scope, verbose: bool) {
+fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut Environment, verbose: bool) {
     let mut lexer = lexer::Lexer::from_string(instructions, es);
     let tokens = lexer.produce_tokens();
     if verbose {
@@ -96,7 +94,7 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, ms: &mut S
             println!("{}", ex);
         }
     }
-    let value = evaluator::evaluate_expressions(exprs, ms, es);
+    let value = evaluator::evaluate_expressions(exprs, es, env);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {

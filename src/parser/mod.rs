@@ -27,7 +27,7 @@ impl Expression {
     #[allow(dead_code)]
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
-            (BLOCK { exprs, applicable }, _) => {
+            (BLOCK { exprs, applicable: _ }, _) => {
                 match exprs.last() {
                     None => { false }
                     Some(e) => { e.type_equals(other) }
@@ -64,8 +64,8 @@ impl Display for Expression {
                 { f.write_str(&*format!("{}<-{}", varname, varval)) }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)) }
-            BLOCK { exprs , applicable} =>
-                { f.write_str(&*format!("[{}[{:?}]]", if *applicable {"(?)"} else {""}, exprs)) }
+            BLOCK { exprs, applicable } =>
+                { f.write_str(&*format!("[{}[{:?}]]", if *applicable { "(?)" } else { "" }, exprs)) }
             APPLICATION { arg, body } =>
                 { f.write_str(&*format!("{}=>{:?}", arg, body)) }
         };
@@ -230,13 +230,19 @@ impl Parser<'_> {
     fn process_code_block(&mut self) -> Expression {
         self.cursor.step_fwd();
         let mut exprs = vec![];
-        let mut applicable= false;
+        let mut applicable = false;
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
-            if self.curr_in(&APPLICABLE_TOKENS) { applicable = true}
-            exprs.push(Box::new(self.build_expression()));
+            if self.curr_in(&APPLICABLE_TOKENS) { applicable = true }
+            let expr = self.build_expression();
+            self.exprs.push(expr.clone());
+            exprs.push(Box::new(expr));
         }
         self.assert_curr_is(RBRACE);
         self.cursor.step_fwd();
+        let exprs_to_remove = if self.exprs.len() > exprs.len() {
+            self.exprs.len() - exprs.len()
+        } else { 0 };
+        self.exprs.truncate(exprs_to_remove);
         BLOCK { exprs, applicable }
     }
 
@@ -245,6 +251,7 @@ impl Parser<'_> {
             None => {
                 self.scribe.annotate_error(Error::on_line(
                     self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: AT }));
+                self.cursor.step_fwd();
                 return NOTANEXPR;
             }
             Some(ex) => { Box::new(ex) }

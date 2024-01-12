@@ -27,7 +27,6 @@ pub enum TokenType {
     RPAREN,
     LBRACE,
     RBRACE,
-    BAR,
     // binary ops
     MINUS,
     PLUS,
