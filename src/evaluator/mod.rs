@@ -1,5 +1,4 @@
 use std::ops::Deref;
-use std::process::exit;
 
 use crate::environment::{Environment, print_eol, Value};
 use crate::environment::Value::*;
@@ -135,9 +134,10 @@ fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScri
                     result += &*val.to_string()
                 } else {
                     es.annotate_error(Error::on_line(41, UNASSIGNEDVAR { varname: varname.clone() }));
-                    break
+                    break;
                 }
             }
+            ' ' => { result.push(' '); }
             _ => {
                 if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }
             }
