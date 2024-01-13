@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use crate::environment::{Environment};
     use crate::errors::ErrorScribe;
-    use crate::evaluator::{Environment, evaluate_expressions};
-    use crate::evaluator::Value::{BOOLEAN, NOTAVAL};
+    use crate::environment::Value::{BOOLEANVAL, NOTAVAL};
+    use crate::evaluator::evaluate_expressions;
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
     use crate::parser::Expression::*;
@@ -14,7 +15,7 @@ mod tests {
         let v = evaluate_expressions(
             &vec![],
             &mut es,
-            &mut env);
+            &mut env, false);
         dbg!(&v);
         assert_eq!(v, NOTAVAL);
     }
@@ -38,9 +39,9 @@ mod tests {
                 }),
             ],
             &mut es,
-            &mut env);
+            &mut env, false);
         dbg!(&v);
         // assert_eq!(scope.read(&String::from("x")), Some(&Value::INTEGER(2)));
-        assert_eq!(v, BOOLEAN(true));
+        assert_eq!(v, BOOLEANVAL(true));
     }
 }

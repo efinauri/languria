@@ -1,17 +1,24 @@
 use std::env;
 use std::fs::File;
-use std::io::{Read, stdin, stdout, Write};
+use std::io::{Read};
 use std::path::Path;
+use std::process::exit;
+
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
+
+use environment::Environment;
 
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
-use crate::evaluator::Environment;
+use crate::evaluator::evaluate_expressions;
 
 mod lexer;
 mod errors;
 mod parser;
 mod shared;
 mod evaluator;
+mod environment;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -47,30 +54,34 @@ fn serve_repl() {
     let mut verbose = false;
     let mut es = ErrorScribe::from_termination_policy(PERMISSIVE);
     let mut env = Environment::new();
+    let mut input_reader = DefaultEditor::new().unwrap();
     clear_terminal();
     println!("**START OF REPL** - q to quit, dbg to toggle debug mode");
     loop {
-        let mut user_input = String::new();
-        print!("\n> ");
-        stdout().flush().unwrap();
-        match stdin().read_line(&mut user_input) {
-            Ok(_) => {}
-            Err(err) => {
-                eprintln!("REPL error: {}", err);
-                continue;
+        let user_input = input_reader.readline(">> ");
+        match user_input {
+            Ok(line) => {
+                input_reader.add_history_entry(line.as_str()).unwrap();
+                match line.trim() {
+                    "dbg" => {
+                        verbose = !verbose;
+                        println!("debug mode {}", if verbose { "ON" } else { "OFF" });
+                        continue;
+                    }
+                    "q" => { exit(0); }
+                    _ => { interpret_instructions(&mut es, line, &mut env, verbose); }
+                }
             }
-        };
-        if {
-            "q\n";
-            "q";
-            ""
-        }.contains(&user_input.to_lowercase()) { break; }
-        if user_input.starts_with("dbg") {
-            verbose = !verbose;
-            println!("debug mode {}", if verbose { "ON" } else { "OFF" });
-            continue;
+            Err(err) => {
+                match err {
+                    ReadlineError::Interrupted | ReadlineError::Eof => {exit(0)}
+                    _ => {
+                        println!("REPL ERROR");
+                        continue;
+                    }
+                }
+            }
         }
-        interpret_instructions(&mut es, user_input, &mut env, verbose);
     }
 }
 
@@ -94,8 +105,8 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut 
             println!("{}", ex);
         }
     }
-    let input_exprs = exprs.iter().map(|ex|Box::new(ex.clone())).collect();
-    let value = evaluator::evaluate_expressions(&input_exprs, es, env);
+    let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();
+    let value = evaluate_expressions(&input_exprs, es, env, false);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {
