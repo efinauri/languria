@@ -1,3 +1,4 @@
+use std::env::var;
 use std::ops::Deref;
 
 use crate::environment::{Environment, print_eol, Value};
@@ -131,13 +132,13 @@ fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScri
             '}' => {
                 varname.remove(0);
                 if let Some(val) = env.read(&varname) {
-                    result += &*val.to_string()
+                    result += &*val.to_string();
+                    varname.clear();
                 } else {
                     es.annotate_error(Error::on_line(41, UNASSIGNEDVAR { varname: varname.clone() }));
                     break;
                 }
             }
-            ' ' => { result.push(' '); }
             _ => {
                 if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }
             }
