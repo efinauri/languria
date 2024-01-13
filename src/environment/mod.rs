@@ -2,8 +2,8 @@ use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Neg;
-use crate::environment::Value::*;
 
+use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
@@ -22,7 +22,7 @@ impl Environment {
         let scope = Scope::new();
         self.scopes.push(scope);
     }
-    pub fn destroy_scope(&mut self) { self.scopes.pop(); }
+    pub fn destroy_scope(&mut self) { if self.scopes.len() > 1 { self.scopes.pop(); } }
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
     pub fn curr_scope_mut(&mut self) -> &mut Scope { self.scopes.iter_mut().last().unwrap() }
 
@@ -200,7 +200,7 @@ impl Value {
         match self {
             INTEGERVAL(int) => { INTEGERVAL(-int) }
             FLOATVAL(flt) => { FLOATVAL(flt.neg()) }
-            _ => {ERRVAL }
+            _ => { ERRVAL }
         }
     }
 

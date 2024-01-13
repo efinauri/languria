@@ -15,6 +15,26 @@ The name (a homophone for "the watermelon" in italian) is the first thing that c
 
 # SYNTAX
 ## EXPRESSIONS
+
+An expression is a piece of code that can be evaluated, producing a value.
+  
+    1 // values themselves are expressions.
+    (2 + 3) * (4 + 5)  // both (2 + 3) and (4 + 5) are expressions. Of course, the entire line is also an expression.
+
+A scope, which is a section of code between {}, is an expression as well. The value produced by a scope is either the value that was explicitly returned in the middle of it, or takes what's produced by the last expression in the scope.
+    
+    rps = {
+        return "rock"
+        "paper"
+        "scissor"
+    }
+    phrase = {
+        "how"
+        "are"
+        "you"
+    }  
+    "{phrase} {rps}" == "you rock"  // strings accept tokens between curly brackets by default.
+
 ### VARIABLES AND TYPES
 
 A variable is a container for an expression.

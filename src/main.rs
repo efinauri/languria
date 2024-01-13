@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::File;
-use std::io::{Read};
+use std::io::{Read, stdout, Write};
 use std::path::Path;
 use std::process::exit;
 
@@ -110,6 +110,7 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut 
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {
-        println!("\n--> {}", &value);
+        stdout().flush().unwrap();
+        println!("\t{}", &value);
     }
 }
