@@ -34,6 +34,9 @@ pub enum TokenType {
     PLUS,
     DIV,
     MUL,
+    AND,
+    OR,
+    XOR,
     // unary ops
     DOLLAR,
     BANG,
@@ -61,9 +64,11 @@ pub enum TokenType {
     INTO,
     // others
     AT,
+    // associations
     COLON,
     COMMA,
     DOT,
+    UNDERSCORE,
     QUESTIONMARK,
     //
     NOTATOKEN,
@@ -77,7 +82,10 @@ lazy_static! {
         ("return", RETURN),
         ("true", TRUE),
         ("false", FALSE),
-        ("into", INTO)
+        ("into", INTO),
+        ("and", AND),
+        ("xor", XOR),
+        ("or", OR)
 ]);
 }
 
@@ -176,13 +184,6 @@ impl<'a> Lexer<'_> {
                     } else { break; }
                 }
                 '_' => { self.consume(); }
-                'a'..='z' | 'A'..='z' => {
-                    self.scribe.annotate_error(Error::on_line(
-                        self.line_number,
-                        ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol: peeked.clone() },
-                    ));
-                    return NOTATOKEN;
-                }
                 _ => { break; }
             }
         }
@@ -265,6 +266,7 @@ impl<'a> Lexer<'_> {
                 '.' => DOT,
                 '?' => QUESTIONMARK,
                 '@' => AT,
+                '_' => UNDERSCORE,
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
                 '*' => if self.consume_next_if_eq('=') { MULASSIGN } else { MUL },
@@ -287,7 +289,7 @@ impl<'a> Lexer<'_> {
                 '>' => if self.consume_next_if_eq('=') { GTE } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }
                 '0'..='9' => { self.consume_num(symbol) }
-                'a'..='z' | 'A'..='Z' | '_' => { self.consume_alphabet(symbol) }
+                'a'..='z' | 'A'..='Z' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
                         Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol }));

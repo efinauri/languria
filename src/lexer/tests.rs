@@ -50,6 +50,14 @@ mod tests {
     }
 
     #[test]
+    fn consume_association() {
+        let mut es = ErrorScribe::debug();
+        let mut l = Lexer::from_string(String::from("[1:2]"), &mut es);
+        let tt = l.produce_tokens();
+        assert_eq!(tt.len(), 5);
+    }
+
+    #[test]
     fn consume_int() {
         let mut es = ErrorScribe::debug();
         let mut l = Lexer::from_string(String::from("000_123_456"), &mut es);

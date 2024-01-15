@@ -1,9 +1,9 @@
-use std::env::var;
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::environment::{Environment, print_eol, Value};
 use crate::environment::Value::*;
-use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::errors::{Error, ErrorScribe};
 use crate::errors::ErrorType::UNASSIGNEDVAR;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
@@ -42,6 +42,15 @@ fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut Erro
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
+        Expression::ASSOCIATION { pairs} => {
+            let mut map = HashMap::new();
+            for (k, v) in pairs {
+                let k = Box::new(eval_expr(k, env, scribe));
+                let v = Box::new(eval_expr(v, env, scribe));
+                map.insert(k, v);
+            }
+            ASSOCIATIONVAL(map)
+        }
         Expression::RETURN_EXPR { expr } => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
         Expression::APPLICATION { arg, body } => {
             let it = eval_expr(arg, env, scribe);
@@ -61,7 +70,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             match env.read(varname) {
                 None => {
                     scribe.annotate_error(Error::on_line(env.curr_line,
-                                                         ErrorType::UNASSIGNEDVAR { varname: varname.clone() }));
+                                                         UNASSIGNEDVAR { varname: varname.clone() }));
                     ERRVAL
                 }
                 Some(val) => match val {
@@ -98,6 +107,23 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             }
         }
 
+        Expression::LOGIC { lhs, op, rhs } => {
+            let elhs = eval_expr(lhs, env, scribe);
+
+            match (&op.ttype, elhs.as_bool_val()) {
+                (AND, BOOLEANVAL(bool)) => {
+                    if !bool { return elhs; } else { eval_expr(rhs, env, scribe) }
+                }
+                (OR, BOOLEANVAL(bool)) => {
+                    if bool { return elhs; } else { eval_expr(rhs, env, scribe) }
+                }
+                (XOR, BOOLEANVAL(bool)) => {
+                    let ehrs = eval_expr(rhs, env, scribe).as_bool_val();
+                    if bool { return ehrs.bang_it(); } else { ehrs }
+                }
+                _ => { NOTAVAL }
+            }
+        }
         Expression::BINARY { lhs, op, rhs } => {
             let elhs = eval_expr(lhs, env, scribe);
             let erhs = eval_expr(rhs, env, scribe);

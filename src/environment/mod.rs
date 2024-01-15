@@ -1,6 +1,7 @@
 use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::Neg;
 
 use crate::environment::Value::*;
@@ -95,10 +96,29 @@ pub enum Value {
     BOOLEANVAL(bool),
     LAMBDAVAL(Vec<Box<Expression>>),
     OPTIONVAL(Option<Box<Self>>),
-    ASSOCIATIONVAL(HashMap<Box<Vec<Self>>, Box<Vec<Self>>>),
+    ASSOCIATIONVAL(HashMap<Box<Self>, Box<Self>>),
     RETURNVAL(Box<Self>),
     ERRVAL,
     NOTAVAL,
+}
+
+impl Eq for Value {}
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            INTEGERVAL(int) => { int.hash(state); }
+            FLOATVAL(flt) => { flt.to_bits().hash(state); }
+            STRINGVAL(str) => { str.hash(state); }
+            BOOLEANVAL(bool) => { bool.hash(state); }
+            LAMBDAVAL(lmb) => {}
+            OPTIONVAL(opt) => { opt.hash(state); }
+            ASSOCIATIONVAL(map) => { map.hasher(); }
+            RETURNVAL(ret) => { ret.hash(state); }
+            ERRVAL => {}
+            NOTAVAL => {}
+        }
+    }
 }
 
 impl PartialEq for Value {
@@ -147,14 +167,6 @@ impl Debug for Value {
     }
 }
 
-fn num_as_bool(v: &Value) -> Value {
-    return match v {
-        INTEGERVAL(int) => BOOLEANVAL(*int > 0),
-        FLOATVAL(flt) => BOOLEANVAL(flt.is_sign_positive()),
-        _ => { ERRVAL }
-    };
-}
-
 pub fn print_eol(env: &mut Environment, line: &usize) -> Value {
     let start_new_line = env.last_print_line != *line;
     env.last_print_line = *line;
@@ -172,8 +184,19 @@ impl Value {
             STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL(_) => { f.write_str("lambda") }
+            ASSOCIATIONVAL(map) => {
+                let mut str = map.iter()
+                    .map(|(k, v)|format!("{}: {}, ", k, v))
+                    .reduce(|str1, str2| str1 + &*str2)
+                    .unwrap();
+                str.pop();
+                str.pop();
+                f.write_str(&*format!("[{}]", str))
+            }
             NOTAVAL => { f.write_str("no input.") }
-            _ => { f.write_str("ERR") }
+            ERRVAL => { f.write_str("ERR") }
+            RETURNVAL(val) => { f.write_str(&*val.to_string()) }
+            OPTIONVAL(val) => {f.write_str("TODO")}
         }
     }
 
@@ -188,9 +211,19 @@ impl Value {
             (_, _) => false
         }
     }
+
+    pub fn as_bool_val(&self) -> Value {
+        return match self {
+            BOOLEANVAL(bool) => BOOLEANVAL(*bool),
+            INTEGERVAL(int) => BOOLEANVAL(*int > 0),
+            FLOATVAL(flt) => BOOLEANVAL(flt.is_sign_positive()),
+            _ => { ERRVAL }
+        };
+    }
+
     pub fn bang_it(&self) -> Value {
         match self {
-            INTEGERVAL(_) | FLOATVAL(_) => num_as_bool(&self).bang_it(),
+            INTEGERVAL(_) | FLOATVAL(_) => self.as_bool_val().bang_it(),
             BOOLEANVAL(boo) => { BOOLEANVAL(!boo) }
             _ => { ERRVAL }
         }

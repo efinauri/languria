@@ -15,13 +15,21 @@ pub enum Expression {
     LITERAL { value: Token },
     UNARY { op: Token, expr: Box<Expression> },
     BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
+    LOGIC { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     GROUPING { expr: Box<Expression> },
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
     BLOCK { exprs: Vec<Box<Expression>>, applicable: bool },
     APPLICATION { arg: Box<Expression>, body: Box<Expression> },
     RETURN_EXPR { expr: Box<Expression> },
+    ASSOCIATION { pairs: Vec<(Box<Expression>, Box<Expression>)> },
     NOTANEXPR,
+}
+
+pub enum AssociationState {
+    SET,
+    LIST,
+    MAP,
 }
 
 impl Expression {
@@ -37,11 +45,13 @@ impl Expression {
             (LITERAL { value: _ }, LITERAL { value: _ }) |
             (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
             (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
+            (LOGIC { lhs: _, op: _, rhs: _ }, LOGIC { lhs: _, op: _, rhs: _ }) |
             (GROUPING { expr: _ }, GROUPING { expr: _ }) |
             (VAR_ASSIGN { varname: _, op: _, varval: _ },
                 VAR_ASSIGN { varname: _, op: _, varval: _ }) |
             (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
             (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
+            (ASSOCIATION { pairs: _ }, ASSOCIATION { pairs: _ }) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
         }
@@ -56,7 +66,8 @@ impl Display for Expression {
                 { f.write_str(value.to_string().as_str()) }
             UNARY { op, expr } =>
                 { f.write_str(&*format!("({} {})", op, expr)) }
-            BINARY { lhs, op, rhs } =>
+            BINARY { lhs, op, rhs } |
+            LOGIC { lhs, op, rhs } =>
                 { f.write_str(&*format!("{} <{} {}>", op, lhs, rhs)) }
             GROUPING { expr } =>
                 { f.write_str(&*format!("(group {})", expr)) }
@@ -71,6 +82,8 @@ impl Display for Expression {
                 { f.write_str(&*format!("{}=>{:?}", arg, body)) }
             RETURN_EXPR { expr } =>
                 { f.write_str(&*format!("return {}", expr)) }
+            ASSOCIATION { pairs } =>
+                { f.write_str(&*format!("assoc{:?}", pairs)) }
         };
     }
 }
@@ -82,6 +95,7 @@ const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
 const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
 const APPLICABLE_TOKENS: [TokenType; 2] = [IT, TI];
+const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
@@ -110,7 +124,21 @@ impl Parser<'_> {
         }
     }
 
-    fn build_expression(&mut self) -> Expression { self.equality() }
+    fn build_expression(&mut self) -> Expression { self.logic() }
+
+    fn logic(&mut self) -> Expression {
+        let mut expr = self.equality();
+
+        while self.curr_in(&LOGIC_TOKENS) {
+            self.cursor.step_fwd();
+            expr = LOGIC {
+                lhs: Box::new(expr),
+                op: self.read_prev().clone(),
+                rhs: Box::new(self.equality()),
+            }
+        }
+        expr
+    }
 
     fn equality(&mut self) -> Expression {
         let mut expr = self.comparison();
@@ -193,13 +221,13 @@ impl Parser<'_> {
         }
         let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
         return match ttype {
+            LBRACKET => { self.process_association(AssociationState::MAP) }
+            IDENTIFIER(str) => { self.process_assignment(str) }
+            LBRACE => { self.process_code_block() }
+            AT => { self.process_application() }
             RETURN => {
                 self.cursor.step_fwd();
                 RETURN_EXPR { expr: Box::new(self.build_expression()) }
-            }
-            IDENTIFIER(str) => {
-                self.cursor.step_fwd();
-                self.process_assignment(str)
             }
             IT => {
                 self.cursor.step_fwd();
@@ -220,8 +248,6 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 GROUPING { expr: Box::new(expr) }
             }
-            LBRACE => { self.process_code_block() }
-            AT => { self.process_application() }
             _ => {
                 self.scribe.annotate_error(Error::on_line(
                     self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN {
@@ -233,6 +259,24 @@ impl Parser<'_> {
         };
     }
 
+    fn process_association(&mut self, association_state: AssociationState) -> Expression {
+        self.cursor.step_fwd();
+        let mut keys = vec![];
+        let mut vals = vec![];
+        while self.can_consume() && !self.curr_in(&[RBRACKET]) {
+            keys.push(Box::new(self.build_expression()));
+            if self.curr_in(&[COLON]) {
+                self.cursor.step_fwd();
+                vals.push(Box::new(self.build_expression()));
+                if self.curr_in(&[COMMA]) {
+                    self.cursor.step_fwd();
+                    continue;
+                }
+            }
+        }
+        self.cursor.step_fwd();
+        ASSOCIATION { pairs: keys.iter().map(|k|k.to_owned()).zip(vals).collect() }
+    }
 
     fn process_code_block(&mut self) -> Expression {
         self.cursor.step_fwd();
@@ -265,21 +309,10 @@ impl Parser<'_> {
         };
         self.cursor.step_fwd();
         APPLICATION { arg, body: Box::new(self.build_expression()) }
-
-        // if self.curr_in(&[IDENTIFIER(String::new())]) {
-        //     return APPLIED_FUNC { arg, body: vec![Box::new(self.primary())] };
-        // }
-        // if !self.curr_in(&[BAR]) {
-        //     self.scribe.annotate_error(Error::on_line(
-        //         self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: self.read_curr().ttype.clone() },
-        //     ));
-        //     return NOTANEXPR;
-        // }
-        // self.cursor.step_fwd();
-        // APPLIED_FUNC { arg, body: self.accumulate_exprs_until(BAR) }
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {
+        self.cursor.step_fwd();
         if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
             self.cursor.step_fwd();
             return match &self.peek_back(2).ttype {
