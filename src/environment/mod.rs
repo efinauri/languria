@@ -94,7 +94,7 @@ pub enum Value {
     FLOATVAL(f64),
     STRINGVAL(String),
     BOOLEANVAL(bool),
-    LAMBDAVAL(Vec<Box<Expression>>),
+    LAMBDAVAL(Box<Expression>),
     OPTIONVAL(Option<Box<Self>>),
     ASSOCIATIONVAL(HashMap<Box<Self>, Box<Self>>),
     RETURNVAL(Box<Self>),

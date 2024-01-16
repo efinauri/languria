@@ -34,10 +34,28 @@ pub enum AssociationState {
 }
 
 impl Expression {
+    pub fn applicable(&self) -> bool {
+        match self {
+            LITERAL { value } => { [IT, TI, IDX].contains(&value.ttype) }
+            UNARY { expr, .. } => { expr.applicable() }
+            BINARY { rhs, lhs, .. } => { rhs.applicable() || lhs.applicable() }
+            LOGIC { rhs, lhs, .. } => { rhs.applicable() || lhs.applicable() }
+            GROUPING { expr } => { expr.applicable() }
+            VAR_ASSIGN { .. } => { false }
+            VAR_RAW { .. } => { false }
+            BLOCK { exprs } => { exprs.iter().any(|ex| ex.applicable()) }
+            APPLICATION { arg, .. } => { arg.applicable() }
+            RETURN_EXPR { expr } => { expr.applicable() }
+            ASSOCIATION { pairs } => { pairs.iter().any(|(k, v)| k.applicable() | v.applicable()) }
+            QUERY { source, field } => { source.applicable() || field.applicable() }
+            NOTANEXPR => { false }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
-            (BLOCK { exprs }, _) => {
+            (BLOCK { exprs, .. }, _) => {
                 match exprs.last() {
                     None => { false }
                     Some(e) => { e.type_equals(other) }
@@ -87,7 +105,7 @@ impl Display for Expression {
             ASSOCIATION { pairs } =>
                 { f.write_str(&*format!("assoc{:?}", pairs)) }
             QUERY { source, field } =>
-                {f.write_str(&*format!("{}#{}", source, field))}
+                { f.write_str(&*format!("{}#{}", source, field)) }
         };
     }
 }
@@ -98,7 +116,6 @@ const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
 const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
-const APPLICABLE_TOKENS: [TokenType; 2] = [IT, TI];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
@@ -132,13 +149,11 @@ impl Parser<'_> {
         let expr = self.logic();
         if self.curr_in(&[POUND]) {
             self.cursor.step_fwd();
-            QUERY {source: Box::new(expr), field: Box::new(self.build_expression()) }
-        }
-        else if self.curr_in(&[AT]) {
+            QUERY { source: Box::new(expr), field: Box::new(self.build_expression()) }
+        } else if self.curr_in(&[AT]) {
             self.cursor.step_fwd();
             APPLICATION { arg: Box::new(expr), body: Box::new(self.build_expression()) }
-        }
-        else { expr }
+        } else { expr }
     }
 
     fn logic(&mut self) -> Expression {
@@ -243,15 +258,7 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 RETURN_EXPR { expr: Box::new(self.build_expression()) }
             }
-            IT => {
-                self.cursor.step_fwd();
-                VAR_RAW { varname: String::from("_it") }
-            }
-            TI => {
-                self.cursor.step_fwd();
-                VAR_RAW { varname: String::from("_ti") }
-            }
-            FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
+            IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL { value: self.read_prev().clone() }
             }

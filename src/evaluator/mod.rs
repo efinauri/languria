@@ -8,7 +8,6 @@ use crate::errors::ErrorType::UNASSIGNEDVAR;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
-use crate::parser::Expression::{LITERAL, VAR_RAW};
 
 mod tests;
 
@@ -41,6 +40,7 @@ fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut Erro
 }
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
+    if expr.applicable() && !env.curr_scope().is_application { return LAMBDAVAL(Box::new(expr.clone())); }
     match expr {
         Expression::QUERY { source, field } => {
             let source = eval_expr(source, env, scribe);
@@ -75,23 +75,21 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             let val = eval_expr(varval, env, scribe);
             env.write(varname, &val, op, scribe)
         }
-        VAR_RAW { varname } => {
-            match env.read(varname) {
-                None => {
-                    scribe.annotate_error(Error::on_line(env.curr_line,
-                                                         UNASSIGNEDVAR { varname: varname.clone() }));
-                    ERRVAL
-                }
-                Some(val) => match val {
-                    LAMBDAVAL(exprs) => {
-                        eval_expr(&Expression::BLOCK { exprs: exprs.clone() }, env, scribe)
-                    }
-                    _ => { val.clone() }
-                }
+        Expression::VAR_RAW { varname } => {
+            let read_val = env.read(varname);
+            if read_val.is_none() {
+                scribe.annotate_error(Error::on_line(env.curr_line,
+                                                     UNASSIGNEDVAR { varname: varname.clone() }));
+                return ERRVAL;
             }
+            let read_val = read_val.unwrap().clone();
+            return match read_val {
+                LAMBDAVAL(ex) => { eval_expr(&ex, env, scribe) }
+                _ => { read_val.clone() }
+            };
         }
 
-        LITERAL { value } => {
+        Expression::LITERAL { value } => {
             match &value.ttype {
                 EOLPRINT => print_eol(env, &value.line),
                 FALSE => BOOLEANVAL(false),
@@ -99,6 +97,9 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 STRING(str) => STRINGVAL(fill_in_string_tokens(str, env, scribe)),
                 INTEGER(int) => INTEGERVAL(*int),
                 FLOAT(flt) => FLOATVAL(*flt),
+                IT => { env.read(&"_it".to_string()).unwrap().clone() }
+                TI => { env.read(&"_ti".to_string()).unwrap().clone() }
+                IDX => { env.read(&"_idx".to_string()).unwrap().clone() }
                 _ => { ERRVAL }
             }
         }
