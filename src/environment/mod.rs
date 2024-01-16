@@ -111,7 +111,7 @@ impl Hash for Value {
             FLOATVAL(flt) => { flt.to_bits().hash(state); }
             STRINGVAL(str) => { str.hash(state); }
             BOOLEANVAL(bool) => { bool.hash(state); }
-            LAMBDAVAL(lmb) => {}
+            LAMBDAVAL(_lmb) => {}
             OPTIONVAL(opt) => { opt.hash(state); }
             ASSOCIATIONVAL(map) => { map.hasher(); }
             RETURNVAL(ret) => { ret.hash(state); }
@@ -196,7 +196,7 @@ impl Value {
             NOTAVAL => { f.write_str("no input.") }
             ERRVAL => { f.write_str("ERR") }
             RETURNVAL(val) => { f.write_str(&*val.to_string()) }
-            OPTIONVAL(val) => {f.write_str("TODO")}
+            OPTIONVAL(_val) => {f.write_str("TODO")}
         }
     }
 

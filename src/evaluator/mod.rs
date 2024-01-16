@@ -42,7 +42,17 @@ fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut Erro
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
-        Expression::ASSOCIATION { pairs} => {
+        Expression::QUERY { source, field } => {
+            let source = eval_expr(source, env, scribe);
+            return match source {
+                ASSOCIATIONVAL(map) => {
+                    let field = eval_expr(field, env, scribe);
+                    if let Some(val) = map.get(&field) { return val.deref().clone(); } else { NOTAVAL }
+                }
+                _ => NOTAVAL
+            };
+        }
+        Expression::ASSOCIATION { pairs } => {
             let mut map = HashMap::new();
             for (k, v) in pairs {
                 let k = Box::new(eval_expr(k, env, scribe));
@@ -56,8 +66,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             let it = eval_expr(arg, env, scribe);
             eval_application(body, env, scribe, it, NOTAVAL)
         }
-        Expression::BLOCK { exprs, applicable } => {
-            if *applicable && !env.curr_scope().is_application { return LAMBDAVAL(exprs.to_owned()); }
+        Expression::BLOCK { exprs } => {
             evaluate_expressions(exprs, scribe, env, true)
         }
         Expression::NOTANEXPR => { NOTAVAL }
@@ -75,7 +84,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 }
                 Some(val) => match val {
                     LAMBDAVAL(exprs) => {
-                        eval_expr(&Expression::BLOCK { exprs: exprs.clone(), applicable: true }, env, scribe)
+                        eval_expr(&Expression::BLOCK { exprs: exprs.clone() }, env, scribe)
                     }
                     _ => { val.clone() }
                 }

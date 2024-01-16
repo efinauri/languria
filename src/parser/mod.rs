@@ -19,10 +19,11 @@ pub enum Expression {
     GROUPING { expr: Box<Expression> },
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW { varname: String },
-    BLOCK { exprs: Vec<Box<Expression>>, applicable: bool },
+    BLOCK { exprs: Vec<Box<Expression>> },
     APPLICATION { arg: Box<Expression>, body: Box<Expression> },
     RETURN_EXPR { expr: Box<Expression> },
     ASSOCIATION { pairs: Vec<(Box<Expression>, Box<Expression>)> },
+    QUERY { source: Box<Expression>, field: Box<Expression> },
     NOTANEXPR,
 }
 
@@ -36,7 +37,7 @@ impl Expression {
     #[allow(dead_code)]
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
-            (BLOCK { exprs, applicable: _ }, _) => {
+            (BLOCK { exprs }, _) => {
                 match exprs.last() {
                     None => { false }
                     Some(e) => { e.type_equals(other) }
@@ -52,6 +53,7 @@ impl Expression {
             (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
             (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
             (ASSOCIATION { pairs: _ }, ASSOCIATION { pairs: _ }) |
+            (QUERY { source: _, field: _ }, QUERY { source: _, field: _ }) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
         }
@@ -76,14 +78,16 @@ impl Display for Expression {
                 { f.write_str(&*format!("{}<-{}", varname, varval)) }
             VAR_RAW { varname } =>
                 { f.write_str(&*format!("?<-{}", varname)) }
-            BLOCK { exprs, applicable } =>
-                { f.write_str(&*format!("[{}[{:?}]]", if *applicable { "(?)" } else { "" }, exprs)) }
+            BLOCK { exprs } =>
+                { f.write_str(&*format!("[[{:?}]]", exprs)) }
             APPLICATION { arg, body } =>
                 { f.write_str(&*format!("{}=>{:?}", arg, body)) }
             RETURN_EXPR { expr } =>
                 { f.write_str(&*format!("return {}", expr)) }
             ASSOCIATION { pairs } =>
                 { f.write_str(&*format!("assoc{:?}", pairs)) }
+            QUERY { source, field } =>
+                {f.write_str(&*format!("{}#{}", source, field))}
         };
     }
 }
@@ -124,7 +128,18 @@ impl Parser<'_> {
         }
     }
 
-    fn build_expression(&mut self) -> Expression { self.logic() }
+    fn build_expression(&mut self) -> Expression {
+        let expr = self.logic();
+        if self.curr_in(&[POUND]) {
+            self.cursor.step_fwd();
+            QUERY {source: Box::new(expr), field: Box::new(self.build_expression()) }
+        }
+        else if self.curr_in(&[AT]) {
+            self.cursor.step_fwd();
+            APPLICATION { arg: Box::new(expr), body: Box::new(self.build_expression()) }
+        }
+        else { expr }
+    }
 
     fn logic(&mut self) -> Expression {
         let mut expr = self.equality();
@@ -224,7 +239,6 @@ impl Parser<'_> {
             LBRACKET => { self.process_association(AssociationState::MAP) }
             IDENTIFIER(str) => { self.process_assignment(str) }
             LBRACE => { self.process_code_block() }
-            AT => { self.process_application() }
             RETURN => {
                 self.cursor.step_fwd();
                 RETURN_EXPR { expr: Box::new(self.build_expression()) }
@@ -275,15 +289,13 @@ impl Parser<'_> {
             }
         }
         self.cursor.step_fwd();
-        ASSOCIATION { pairs: keys.iter().map(|k|k.to_owned()).zip(vals).collect() }
+        ASSOCIATION { pairs: keys.iter().map(|k| k.to_owned()).zip(vals).collect() }
     }
 
     fn process_code_block(&mut self) -> Expression {
         self.cursor.step_fwd();
         let mut exprs = vec![];
-        let mut applicable = false;
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
-            if self.curr_in(&APPLICABLE_TOKENS) { applicable = true }
             let expr = self.build_expression();
             self.exprs.push(expr.clone());
             exprs.push(Box::new(expr));
@@ -294,21 +306,7 @@ impl Parser<'_> {
             self.exprs.len() - exprs.len()
         } else { 0 };
         self.exprs.truncate(exprs_to_remove);
-        BLOCK { exprs, applicable }
-    }
-
-    fn process_application(&mut self) -> Expression {
-        let arg = match self.exprs.pop() {
-            None => {
-                self.scribe.annotate_error(Error::on_line(
-                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN { ttype: AT }));
-                self.cursor.step_fwd();
-                return NOTANEXPR;
-            }
-            Some(ex) => { Box::new(ex) }
-        };
-        self.cursor.step_fwd();
-        APPLICATION { arg, body: Box::new(self.build_expression()) }
+        BLOCK { exprs }
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {
