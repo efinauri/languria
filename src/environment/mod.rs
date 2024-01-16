@@ -96,7 +96,7 @@ pub enum Value {
     BOOLEANVAL(bool),
     LAMBDAVAL(Box<Expression>),
     OPTIONVAL(Option<Box<Self>>),
-    ASSOCIATIONVAL(HashMap<Box<Self>, Box<Self>>),
+    ASSOCIATIONVAL {map: HashMap<Box<Self>, Box<Self>>, default: Option<Box<Self>>},
     RETURNVAL(Box<Self>),
     ERRVAL,
     NOTAVAL,
@@ -113,7 +113,7 @@ impl Hash for Value {
             BOOLEANVAL(bool) => { bool.hash(state); }
             LAMBDAVAL(_lmb) => {}
             OPTIONVAL(opt) => { opt.hash(state); }
-            ASSOCIATIONVAL(map) => { map.hasher(); }
+            ASSOCIATIONVAL{map, ..} => { map.hasher(); }
             RETURNVAL(ret) => { ret.hash(state); }
             ERRVAL => {}
             NOTAVAL => {}
@@ -184,19 +184,20 @@ impl Value {
             STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL(_) => { f.write_str("lambda") }
-            ASSOCIATIONVAL(map) => {
+            ASSOCIATIONVAL{map, default} => {
                 let mut str = map.iter()
-                    .map(|(k, v)|format!("{}: {}, ", k, v))
+                    .map(|(k, v)| format!("{}: {}, ", k, v))
                     .reduce(|str1, str2| str1 + &*str2)
-                    .unwrap();
+                    .unwrap_or(String::new());
                 str.pop();
                 str.pop();
+                if let Some(val) = default { str += &*format!(", _: {}", val); }
                 f.write_str(&*format!("[{}]", str))
             }
             NOTAVAL => { f.write_str("no input.") }
             ERRVAL => { f.write_str("ERR") }
             RETURNVAL(val) => { f.write_str(&*val.to_string()) }
-            OPTIONVAL(_val) => {f.write_str("TODO")}
+            OPTIONVAL(_val) => { f.write_str("TODO") }
         }
     }
 
@@ -242,7 +243,7 @@ impl Value {
             Some(boxx)
             => {
                 match (**boxx).clone() {
-                    LITERAL { value } =>
+                    LITERAL(value) =>
                         match value.ttype {
                             IDENTIFIER(str) => {
                                 format!("{}: ", str)

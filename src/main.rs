@@ -1,3 +1,4 @@
+use crate::evaluator::evaluate_expressions;
 use std::env;
 use std::fs::File;
 use std::io::{Read, stdout, Write};
@@ -11,7 +12,6 @@ use environment::Environment;
 
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
-use crate::evaluator::evaluate_expressions;
 
 mod lexer;
 mod errors;
@@ -102,7 +102,7 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut 
     if verbose {
         println!("\nthis is parsed as:\n");
         for ex in &exprs {
-            println!("{}", ex);
+            println!("{:#?}", ex);
         }
     }
     let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();

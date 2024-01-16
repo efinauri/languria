@@ -3,9 +3,38 @@ mod tests {
     use crate::errors::ErrorScribe;
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
-    use crate::parser::{LITERAL, Parser};
-    use crate::parser::Expression::{APPLICATION, BINARY, GROUPING, NOTANEXPR, UNARY, VAR_ASSIGN, VAR_RAW};
+    use crate::parser::{Expression, LITERAL, Parser};
+    use crate::parser::Expression::{APPLICATION, ASSOCIATION, BINARY, BLOCK, GROUPING, LOGIC, NOTANEXPR, QUERY, UNARY, VAR_ASSIGN, VAR_RAW};
     use crate::shared::WalksCollection;
+
+
+    impl Expression {
+        pub fn type_equals(&self, other: &Self) -> bool {
+            match (self, other) {
+                (BLOCK(exprs), _) => {
+                    match exprs.last() {
+                        None => { false }
+                        Some(e) => { e.type_equals(other) }
+                    }
+                }
+                (LITERAL(_) , LITERAL(_) ) |
+                (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
+                (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
+                (LOGIC { lhs: _, op: _, rhs: _ }, LOGIC { lhs: _, op: _, rhs: _ }) |
+                (GROUPING(_), GROUPING(_)) |
+                (VAR_ASSIGN { varname: _, op: _, varval: _ },
+                    VAR_ASSIGN { varname: _, op: _, varval: _ }) |
+                (VAR_RAW(_), VAR_RAW(_)) |
+                (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
+                (ASSOCIATION(_), ASSOCIATION(_)) |
+                (QUERY { source: _, field: _ }, QUERY { source: _, field: _ }) |
+                (NOTANEXPR, NOTANEXPR) => true,
+                (_, _) => false
+            }
+        }
+    }
+
+
 
     #[test]
     fn print_tree() {
@@ -17,15 +46,13 @@ mod tests {
         let e = BINARY {
             lhs: Box::from(UNARY {
                 op: minus,
-                expr: Box::from(LITERAL { value: four }),
+                expr: Box::from(LITERAL(four)),
             }),
             op: mul,
-            rhs: Box::from(GROUPING {
-                expr: Box::from(LITERAL { value: six_point_two })
-            }),
+            rhs: Box::from(GROUPING(Box::from(LITERAL(six_point_two))))
         };
         dbg!(&e);
-        println!("{}", e);
+        println!("{:#?}", e);
     }
 
     #[test]
@@ -106,28 +133,7 @@ mod tests {
                 &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
-            assert!(expr.type_equals(&LITERAL {
-                value: Token::debug(NOTATOKEN),
-            }));
-        }
-    }
-
-    #[test]
-    fn it_and_ti_to_vars() {
-        let mut es = ErrorScribe::debug();
-        for (op_tok, idx) in vec![
-            Token::debug(IT),
-            Token::debug(TI),
-        ].iter().zip(0..)
-        {
-            let mut p = Parser::from_tokens(
-                vec![
-                    op_tok.clone(),
-                ],
-                &mut es);
-            let expr = p.build_expression();
-            dbg!(idx, &expr);
-            assert!(expr.type_equals(&VAR_RAW { varname: String::new() }));
+            assert!(expr.type_equals(&LITERAL(Token::debug(NOTATOKEN))));
         }
     }
 
@@ -143,9 +149,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&GROUPING {
-            expr: Box::new(NOTANEXPR),
-        }));
+        assert!(expr.type_equals(&GROUPING(Box::new(NOTANEXPR))));
     }
 
     #[test]
@@ -158,9 +162,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&VAR_RAW {
-            varname: "".to_string(),
-        }));
+        assert!(expr.type_equals(&VAR_RAW("".to_string())));
     }
 
     #[test]
@@ -225,7 +227,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&LITERAL { value: Token::debug(INTEGER(2)) }));
+        assert!(expr.type_equals(&LITERAL(Token::debug(INTEGER(2)))));
     }
 
     #[test]

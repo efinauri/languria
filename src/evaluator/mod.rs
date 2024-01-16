@@ -5,11 +5,37 @@ use crate::environment::{Environment, print_eol, Value};
 use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe};
 use crate::errors::ErrorType::UNASSIGNEDVAR;
-use crate::lexer::Token;
+use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
 mod tests;
+
+pub fn is_expr_applicable(expr: &Expression, env: &Environment) -> bool {
+    match expr {
+        Expression::VAR_RAW(varname)
+        => { env.read(varname).is_some() } // should never happen
+
+        Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
+        Expression::NOTANEXPR => { false }
+        Expression::VAR_ASSIGN { .. } => { false }
+
+        Expression::RETURN_EXPR(expr) |
+        Expression::APPLICATION { arg: expr, .. } |
+        Expression::UNARY { expr, .. } |
+        Expression::GROUPING(expr)
+        => { is_expr_applicable(expr, env) }
+
+        Expression::BINARY { rhs, lhs, .. } |
+        Expression::LOGIC { rhs, lhs, .. } |
+        Expression::QUERY { source: rhs, field: lhs }
+        => { is_expr_applicable(rhs, env) || is_expr_applicable(lhs, env) }
+        Expression::BLOCK(exprs)
+        => { exprs.iter().any(|expr| is_expr_applicable(expr, env)) }
+        Expression::ASSOCIATION(pairs)
+        => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env) || is_expr_applicable(v, env)) }
+    }
+}
 
 pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment, subscoping: bool) -> Value {
     if subscoping { env.create_scope(); }
@@ -40,42 +66,8 @@ fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut Erro
 }
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
-    if expr.applicable() && !env.curr_scope().is_application { return LAMBDAVAL(Box::new(expr.clone())); }
     match expr {
-        Expression::QUERY { source, field } => {
-            let source = eval_expr(source, env, scribe);
-            return match source {
-                ASSOCIATIONVAL(map) => {
-                    let field = eval_expr(field, env, scribe);
-                    if let Some(val) = map.get(&field) { return val.deref().clone(); } else { NOTAVAL }
-                }
-                _ => NOTAVAL
-            };
-        }
-        Expression::ASSOCIATION { pairs } => {
-            let mut map = HashMap::new();
-            for (k, v) in pairs {
-                let k = Box::new(eval_expr(k, env, scribe));
-                let v = Box::new(eval_expr(v, env, scribe));
-                map.insert(k, v);
-            }
-            ASSOCIATIONVAL(map)
-        }
-        Expression::RETURN_EXPR { expr } => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
-        Expression::APPLICATION { arg, body } => {
-            let it = eval_expr(arg, env, scribe);
-            eval_application(body, env, scribe, it, NOTAVAL)
-        }
-        Expression::BLOCK { exprs } => {
-            evaluate_expressions(exprs, scribe, env, true)
-        }
-        Expression::NOTANEXPR => { NOTAVAL }
-        Expression::GROUPING { expr } => { eval_expr(expr, env, scribe) }
-        Expression::VAR_ASSIGN { varname, op, varval } => {
-            let val = eval_expr(varval, env, scribe);
-            env.write(varname, &val, op, scribe)
-        }
-        Expression::VAR_RAW { varname } => {
+        Expression::VAR_RAW(varname) => {
             let read_val = env.read(varname);
             if read_val.is_none() {
                 scribe.annotate_error(Error::on_line(env.curr_line,
@@ -88,8 +80,58 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 _ => { read_val.clone() }
             };
         }
+        _ => {}
+    }
 
-        Expression::LITERAL { value } => {
+    if is_expr_applicable(expr, env) && !env.curr_scope().is_application { return LAMBDAVAL(Box::new(expr.clone())); }
+
+    match expr {
+        Expression::VAR_RAW(_) => NOTAVAL, // unreachable because it's handled separately
+        Expression::QUERY { source, field } => {
+            let source = eval_expr(source, env, scribe);
+            return match source {
+                ASSOCIATIONVAL { map, default } => {
+                    let field = eval_expr(field, env, scribe);
+                    if let Some(val) = map.get(&field) {
+                        return val.deref().clone();
+                    } else if let Some(val) = default {
+                        return val.deref().clone();
+                    } else { NOTAVAL }
+                }
+                _ => NOTAVAL
+            };
+        }
+        Expression::ASSOCIATION(pairs) => {
+            let mut map = HashMap::new();
+            let mut default = None;
+            for (k, v) in pairs {
+                if let Expression::LITERAL(tok) = k.deref() {
+                    if tok.type_equals(&TokenType::UNDERSCORE) {
+                        default = Some(Box::new(eval_expr(v, env, scribe)));
+                        continue;
+                    }
+                }
+                let k = Box::new(eval_expr(k, env, scribe));
+                let v = Box::new(eval_expr(v, env, scribe));
+                map.insert(k, v);
+            }
+            ASSOCIATIONVAL { map, default }
+        }
+        Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
+        Expression::APPLICATION { arg, body } => {
+            let it = eval_expr(arg, env, scribe);
+            eval_application(body, env, scribe, it, NOTAVAL)
+        }
+        Expression::BLOCK(exprs) => {
+            evaluate_expressions(exprs, scribe, env, true)
+        }
+        Expression::NOTANEXPR => { NOTAVAL }
+        Expression::GROUPING(expr) => { eval_expr(expr, env, scribe) }
+        Expression::VAR_ASSIGN { varname, op, varval } => {
+            let val = eval_expr(varval, env, scribe);
+            env.write(varname, &val, op, scribe)
+        }
+        Expression::LITERAL(value) => {
             match &value.ttype {
                 EOLPRINT => print_eol(env, &value.line),
                 FALSE => BOOLEANVAL(false),

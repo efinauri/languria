@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter};
 use std::vec;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
@@ -12,17 +11,17 @@ mod tests;
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
 pub enum Expression {
-    LITERAL { value: Token },
+    LITERAL(Token),
     UNARY { op: Token, expr: Box<Expression> },
     BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     LOGIC { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
-    GROUPING { expr: Box<Expression> },
+    GROUPING(Box<Expression>),
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
-    VAR_RAW { varname: String },
-    BLOCK { exprs: Vec<Box<Expression>> },
+    VAR_RAW(String),
+    BLOCK(Vec<Box<Expression>>),
     APPLICATION { arg: Box<Expression>, body: Box<Expression> },
-    RETURN_EXPR { expr: Box<Expression> },
-    ASSOCIATION { pairs: Vec<(Box<Expression>, Box<Expression>)> },
+    RETURN_EXPR(Box<Expression>),
+    ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
     QUERY { source: Box<Expression>, field: Box<Expression> },
     NOTANEXPR,
 }
@@ -31,83 +30,6 @@ pub enum AssociationState {
     SET,
     LIST,
     MAP,
-}
-
-impl Expression {
-    pub fn applicable(&self) -> bool {
-        match self {
-            LITERAL { value } => { [IT, TI, IDX].contains(&value.ttype) }
-            UNARY { expr, .. } => { expr.applicable() }
-            BINARY { rhs, lhs, .. } => { rhs.applicable() || lhs.applicable() }
-            LOGIC { rhs, lhs, .. } => { rhs.applicable() || lhs.applicable() }
-            GROUPING { expr } => { expr.applicable() }
-            VAR_ASSIGN { .. } => { false }
-            VAR_RAW { .. } => { false }
-            BLOCK { exprs } => { exprs.iter().any(|ex| ex.applicable()) }
-            APPLICATION { arg, .. } => { arg.applicable() }
-            RETURN_EXPR { expr } => { expr.applicable() }
-            ASSOCIATION { pairs } => { pairs.iter().any(|(k, v)| k.applicable() | v.applicable()) }
-            QUERY { source, field } => { source.applicable() || field.applicable() }
-            NOTANEXPR => { false }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn type_equals(&self, other: &Self) -> bool {
-        match (self, other) {
-            (BLOCK { exprs, .. }, _) => {
-                match exprs.last() {
-                    None => { false }
-                    Some(e) => { e.type_equals(other) }
-                }
-            }
-            (LITERAL { value: _ }, LITERAL { value: _ }) |
-            (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
-            (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
-            (LOGIC { lhs: _, op: _, rhs: _ }, LOGIC { lhs: _, op: _, rhs: _ }) |
-            (GROUPING { expr: _ }, GROUPING { expr: _ }) |
-            (VAR_ASSIGN { varname: _, op: _, varval: _ },
-                VAR_ASSIGN { varname: _, op: _, varval: _ }) |
-            (VAR_RAW { varname: _ }, VAR_RAW { varname: _ }) |
-            (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
-            (ASSOCIATION { pairs: _ }, ASSOCIATION { pairs: _ }) |
-            (QUERY { source: _, field: _ }, QUERY { source: _, field: _ }) |
-            (NOTANEXPR, NOTANEXPR) => true,
-            (_, _) => false
-        }
-    }
-}
-
-
-impl Display for Expression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        return match &self {
-            LITERAL { value } =>
-                { f.write_str(value.to_string().as_str()) }
-            UNARY { op, expr } =>
-                { f.write_str(&*format!("({} {})", op, expr)) }
-            BINARY { lhs, op, rhs } |
-            LOGIC { lhs, op, rhs } =>
-                { f.write_str(&*format!("{} <{} {}>", op, lhs, rhs)) }
-            GROUPING { expr } =>
-                { f.write_str(&*format!("(group {})", expr)) }
-            NOTANEXPR => { f.write_str("ERR") }
-            VAR_ASSIGN { varname, op: _, varval } =>
-                { f.write_str(&*format!("{}<-{}", varname, varval)) }
-            VAR_RAW { varname } =>
-                { f.write_str(&*format!("?<-{}", varname)) }
-            BLOCK { exprs } =>
-                { f.write_str(&*format!("[[{:?}]]", exprs)) }
-            APPLICATION { arg, body } =>
-                { f.write_str(&*format!("{}=>{:?}", arg, body)) }
-            RETURN_EXPR { expr } =>
-                { f.write_str(&*format!("return {}", expr)) }
-            ASSOCIATION { pairs } =>
-                { f.write_str(&*format!("assoc{:?}", pairs)) }
-            QUERY { source, field } =>
-                { f.write_str(&*format!("{}#{}", source, field)) }
-        };
-    }
 }
 
 const ASSIGN_TOKENS: [TokenType; 8] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN];
@@ -234,7 +156,7 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 let value = self.read_curr().clone();
                 self.cursor.mov(2);
-                return BINARY { op, rhs: Box::new(LITERAL { value }), lhs: Box::new(self.unary()) };
+                return BINARY { op, rhs: Box::new(LITERAL(value)), lhs: Box::new(self.unary()) };
             }
             self.cursor.step_fwd();
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
@@ -256,18 +178,18 @@ impl Parser<'_> {
             LBRACE => { self.process_code_block() }
             RETURN => {
                 self.cursor.step_fwd();
-                RETURN_EXPR { expr: Box::new(self.build_expression()) }
+                RETURN_EXPR(Box::new(self.build_expression()))
             }
-            IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
+            IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT | UNDERSCORE => {
                 self.cursor.step_fwd();
-                LITERAL { value: self.read_prev().clone() }
+                LITERAL(self.read_prev().clone())
             }
             LPAREN => {
                 self.cursor.step_fwd();
                 let expr = self.build_expression();
                 self.assert_curr_is(RPAREN);
                 self.cursor.step_fwd();
-                GROUPING { expr: Box::new(expr) }
+                GROUPING(Box::new(expr))
             }
             _ => {
                 self.scribe.annotate_error(Error::on_line(
@@ -296,7 +218,7 @@ impl Parser<'_> {
             }
         }
         self.cursor.step_fwd();
-        ASSOCIATION { pairs: keys.iter().map(|k| k.to_owned()).zip(vals).collect() }
+        ASSOCIATION(keys.iter().map(|k| k.to_owned()).zip(vals).collect())
     }
 
     fn process_code_block(&mut self) -> Expression {
@@ -313,7 +235,7 @@ impl Parser<'_> {
             self.exprs.len() - exprs.len()
         } else { 0 };
         self.exprs.truncate(exprs_to_remove);
-        BLOCK { exprs }
+        BLOCK(exprs)
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {
@@ -335,7 +257,7 @@ impl Parser<'_> {
                 }
             };
         }
-        VAR_RAW { varname: str.clone() }
+        VAR_RAW(str.clone())
     }
 
 

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::environment::{Environment};
+    use crate::environment::{Environment, Value};
     use crate::errors::ErrorScribe;
     use crate::environment::Value::{BOOLEANVAL, NOTAVAL};
     use crate::evaluator::evaluate_expressions;
@@ -24,7 +24,7 @@ mod tests {
     fn var_permanence() {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
-        let val = LITERAL { value: Token::debug(INTEGER(2)) };
+        let val = LITERAL(Token::debug(INTEGER(2)));
         let v = evaluate_expressions(
             &vec![
                 Box::new(VAR_ASSIGN {
@@ -33,7 +33,7 @@ mod tests {
                     varval: Box::new(val.clone()),
                 }),
                 Box::new(BINARY {
-                    lhs: Box::new(VAR_RAW { varname: "x".parse().unwrap() }),
+                    lhs: Box::new(VAR_RAW ("x".parse().unwrap())),
                     op: Token::debug(EQ),
                     rhs: Box::new(val.clone()),
                 }),
@@ -41,7 +41,7 @@ mod tests {
             &mut es,
             &mut env, false);
         dbg!(&v);
-        // assert_eq!(scope.read(&String::from("x")), Some(&Value::INTEGER(2)));
-        assert_eq!(v, BOOLEANVAL(true));
+        assert_eq!(env.read(&String::from("x")), Some(&Value::INTEGERVAL(2)));
+        // assert_eq!(v, BOOLEANVAL(true));
     }
 }

@@ -3,6 +3,7 @@ __TABLE OF CONTENTS__
 * [ABOUT](#about)
 * [SYNTAX](#syntax)
   * [EXPRESSIONS](#expressions)
+    * [UNAPPLIED STATE](#unapplied-state)
     * [VARIABLES AND TYPES](#variables-and-types)
     * [PRINT](#print)
 <!-- TOC -->
@@ -21,7 +22,7 @@ An expression is a piece of code that can be evaluated, producing a value.
     1 // values themselves are expressions.
     (2 + 3) * (4 + 5)  // both (2 + 3) and (4 + 5) are expressions. Of course, the entire line is also an expression.
 
-A scope, which is a section of code between {}, is an expression as well. The value produced by a scope is either the value that was explicitly returned in the middle of it, or takes what's produced by the last expression in the scope.
+A scope, which is a section of code between {}, is an expression as well. The value produced by a scope is either the value that was explicitly returned in the middle of it, or what's produced by the last expression in the scope.
     
     rps = {
         return "rock"
@@ -35,7 +36,21 @@ A scope, which is a section of code between {}, is an expression as well. The va
     }  
     "{phrase} {rps}" == "you rock"  // strings accept tokens between curly brackets by default.
 
-### VARIABLES AND TYPES
+### UNAPPLIED STATE
+
+An expression is in an unapplied state when it contains one of the builtin variables `it`, `ti` or `idx`.
+
+    add_one = it + 1
+
+In order to evaluate an unapplied expression, they need to be fed a value through the application operator `@`.
+
+    2 @ add_one == 3
+    add_two = add_one @ add_one  // note that an application whose left hand side is unapplied is, in turn, unapplied.
+    2 @ add_two == 4
+    2 @ add_one @ add_one == 4  // you can also chain applications directly.
+    
+
+### VARIABLES
 
 A variable is a container for an expression.
 
@@ -43,13 +58,6 @@ A variable is a container for an expression.
     x => 2  // equivalent to x = max(x, 2)
     z =< 1  // equivalent to x = min(x, 1)
 
-You can specify the variable type for clarity.
-
-    int x = 1
-
-Languria is statically typed. If you wish to reuse a variable name to store the value of another type, you need the "into" keyword:
-
-    x into "2"
 
 ### PRINT
 
@@ -72,3 +80,14 @@ To remedy this, you can also tag any of your print statements as such.
 `$$` prints the current location of the line.
 
     $$ $3  // [test.lgr:4] 3
+
+## TYPES
+
+### ASSOCIATION
+
+An association is a mapping from certain values of a type (keys) to certain values of another type (values). The keys are ordered and cannot repeat.
+
+    int_to_name = [1: "one", 2: "three", _: "not saying"]
+    int_to_name #2 == "three"  // you can query an association with the operator #.
+    int_to_name #100 == "not saying" // the special _ key associates any unmapped "something" to the value mapped by _. It's always the last key.
+    
