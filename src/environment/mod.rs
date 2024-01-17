@@ -326,6 +326,13 @@ impl Value {
         }
     }
 
+    pub fn modulo_them(&self, other: &Value) -> Value {
+        match (self, other) {
+            (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(*i % *j) } }
+            (_, _) => ERRVAL
+        }
+    }
+
     fn min_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(min(*i, *j)) } }

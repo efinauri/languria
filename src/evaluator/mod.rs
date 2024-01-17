@@ -207,6 +207,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 PLUS => { elhs.plus_them(&erhs) }
                 MUL => { elhs.mul_them(&erhs) }
                 DIV => { elhs.div_them(&erhs) }
+                MODULO => { elhs.modulo_them(&erhs) }
                 GT => { elhs.cmp_them(&erhs, |a, b| a > b) }
                 GTE => { elhs.cmp_them(&erhs, |a, b| a >= b) }
                 LT => { elhs.cmp_them(&erhs, |a, b| a < b) }

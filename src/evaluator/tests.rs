@@ -197,12 +197,14 @@ mod tests {
                 |a, b| a - b,
                 |a, b| a * b,
                 |a, b| a / b,
+                |a, b| a % b,
             ]
                 .iter().zip([
                 Token::debug(PLUS),
                 Token::debug(MINUS),
                 Token::debug(MUL),
                 Token::debug(DIV),
+                Token::debug(MODULO),
             ]) {
                 let a = rand::thread_rng().gen_range(0..10);
                 let b = rand::thread_rng().gen_range(1..10);

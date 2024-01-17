@@ -36,7 +36,7 @@ const ASSIGN_TOKENS: [TokenType; 8] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN, PLUSA
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
-const MATH_HI_PRIORITY_TOKENS: [TokenType; 2] = [DIV, MUL];
+const MATH_HI_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
 const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
