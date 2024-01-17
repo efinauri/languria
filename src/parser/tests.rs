@@ -1,23 +1,26 @@
 #[cfg(test)]
 mod tests {
-    use crate::errors::ErrorScribe;
+    use crate::parser::Parser;
+use crate::errors::ErrorScribe;
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
-    use crate::parser::{Expression, LITERAL, Parser};
-    use crate::parser::Expression::{APPLICATION, ASSOCIATION, BINARY, BLOCK, GROUPING, LOGIC, NOTANEXPR, QUERY, UNARY, VAR_ASSIGN, VAR_RAW};
+    use crate::parser::Expression;
+    use crate::parser::Expression::*;
     use crate::shared::WalksCollection;
-
 
     impl Expression {
         pub fn type_equals(&self, other: &Self) -> bool {
             match (self, other) {
+                (RETURN_EXPR(expr), other) => {
+                    expr.type_equals(other)
+                }
                 (BLOCK(exprs), _) => {
                     match exprs.last() {
                         None => { false }
                         Some(e) => { e.type_equals(other) }
                     }
                 }
-                (LITERAL(_) , LITERAL(_) ) |
+                (LITERAL(_), LITERAL(_)) |
                 (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
                 (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
                 (LOGIC { lhs: _, op: _, rhs: _ }, LOGIC { lhs: _, op: _, rhs: _ }) |
@@ -35,7 +38,6 @@ mod tests {
     }
 
 
-
     #[test]
     fn print_tree() {
         let mul = Token::debug(MUL);
@@ -49,11 +51,52 @@ mod tests {
                 expr: Box::from(LITERAL(four)),
             }),
             op: mul,
-            rhs: Box::from(GROUPING(Box::from(LITERAL(six_point_two))))
+            rhs: Box::from(GROUPING(Box::from(LITERAL(six_point_two)))),
         };
         dbg!(&e);
         println!("{:#?}", e);
     }
+
+    #[test]
+    fn query_eval() {
+        let mut es = ErrorScribe::debug();
+        let mut p = Parser::from_tokens(
+            vec![
+                Token::debug(LBRACKET),
+                Token::debug(INTEGER(2)),
+                Token::debug(COLON),
+                Token::debug(INTEGER(3)),
+                Token::debug(RBRACKET),
+                Token::debug(POUND),
+                Token::debug(INTEGER(2)),
+            ],
+            &mut es);
+        let expr = p.build_expression();
+        dbg!(&expr);
+        assert!(expr.type_equals(&QUERY {
+            source: Box::new(NOTANEXPR),
+            field: Box::new(NOTANEXPR),
+        }));
+    }
+
+    #[test]
+    fn application_eval() {
+        let mut es = ErrorScribe::debug();
+        let mut p = Parser::from_tokens(
+            vec![
+                Token::debug(INTEGER(2)),
+                Token::debug(AT),
+                Token::debug(IT),
+            ],
+            &mut es);
+        let expr = p.build_expression();
+        dbg!(&expr);
+        assert!(expr.type_equals(&APPLICATION {
+            arg: Box::new(NOTANEXPR),
+            body: Box::new(NOTANEXPR),
+        }));
+    }
+
 
     #[test]
     fn empty_eval() {
@@ -64,6 +107,32 @@ mod tests {
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&NOTANEXPR));
+    }
+
+    #[test]
+    fn logic_exprs() {
+        let mut es = ErrorScribe::debug();
+        for (op_tok, idx) in vec![
+            Token::debug(AND),
+            Token::debug(OR),
+            Token::debug(XOR),
+        ].iter().zip(0..)
+        {
+            let mut p = Parser::from_tokens(
+                vec![
+                    Token::debug(TRUE),
+                    op_tok.clone(),
+                    Token::debug(FALSE),
+                ],
+                &mut es);
+            let expr = p.build_expression();
+            dbg!(idx, &expr);
+            assert!(expr.type_equals(&LOGIC {
+                lhs: Box::new(NOTANEXPR),
+                op: Token::debug(NOTATOKEN),
+                rhs: Box::new(NOTANEXPR),
+            }));
+        }
     }
 
     #[test]
@@ -214,6 +283,20 @@ mod tests {
     }
 
     #[test]
+    fn return_expr() {
+        let mut es = ErrorScribe::debug();
+        let mut p = Parser::from_tokens(
+            vec![
+                Token::debug(RETURN),
+                Token::debug(INTEGER(2)),
+            ],
+            &mut es);
+        let expr = p.build_expression();
+        dbg!(&expr);
+        assert!(expr.type_equals(&LITERAL(Token::debug(INTEGER(2)))));
+    }
+
+    #[test]
     fn code_block() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
@@ -231,24 +314,27 @@ mod tests {
     }
 
     #[test]
-    fn application() {
+    fn association() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
             vec![
-                Token::debug(INTEGER(3)),
-                Token::debug(AT),
-                Token::debug(LPAREN),
-                Token::debug(IT),
-                Token::debug(RPAREN),
+                Token::debug(LBRACKET),
+                Token::debug(INTEGER(1)),
+                Token::debug(COLON),
+                Token::debug(INTEGER(2)),
+                Token::debug(COMMA),
+                Token::debug(INTEGER(1)),
+                Token::debug(COLON),
+                Token::debug(INTEGER(2)),
+                Token::debug(COMMA),
+                Token::debug(UNDERSCORE),
+                Token::debug(COLON),
+                Token::debug(INTEGER(2)),
+                Token::debug(RBRACKET),
             ],
             &mut es);
-        p.parse();
-        let binding = p.into_expressions();
-        let expr = binding.get(0).unwrap();
+        let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&APPLICATION {
-            arg: Box::new(NOTANEXPR),
-            body: Box::new(NOTANEXPR),
-        }));
+        assert!(expr.type_equals(&ASSOCIATION(vec![])));
     }
 }
