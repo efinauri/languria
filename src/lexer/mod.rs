@@ -64,6 +64,7 @@ pub enum TokenType {
     INTO,
     // others
     AT,
+    ATAT,
     // associations
     POUND,
     COLON,
@@ -266,9 +267,9 @@ impl<'a> Lexer<'_> {
                 ':' => COLON,
                 '.' => DOT,
                 '?' => QUESTIONMARK,
-                '@' => AT,
                 '_' => UNDERSCORE,
                 '#' => POUND,
+                '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
                 '*' => if self.consume_next_if_eq('=') { MULASSIGN } else { MUL },

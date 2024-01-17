@@ -18,14 +18,20 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new() -> Environment { Environment { scopes: vec![Scope::new()], curr_line: 0, last_print_line: 0 } }
-    pub fn create_scope(&mut self) {
-        let scope = Scope::new();
+    pub fn in_application(&self) -> bool { self.scopes.iter().any(|s| s.is_application) }
+    pub fn new() -> Environment {
+        Environment {
+            scopes: vec![Scope::new(false)],
+            curr_line: 0,
+            last_print_line: 0,
+        }
+    }
+    pub fn create_scope(&mut self, is_application: bool) {
+        let scope = Scope::new(is_application);
         self.scopes.push(scope);
     }
     pub fn destroy_scope(&mut self) { if self.scopes.len() > 1 { self.scopes.pop(); } }
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
-    pub fn curr_scope_mut(&mut self) -> &mut Scope { self.scopes.iter_mut().last().unwrap() }
 
     pub fn read(&self, varname: &String) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
@@ -48,15 +54,15 @@ impl Environment {
 pub struct Scope {
     variables: HashMap<String, Value>,
     entry_point: String,
-    pub is_application: bool,
+    is_application: bool,
 }
 
 impl Scope {
-    pub fn new() -> Scope {
+    pub fn new(is_application: bool) -> Scope {
         Scope {
             variables: Default::default(),
             entry_point: String::from("REPL"),
-            is_application: false,
+            is_application,
         }
     }
 

@@ -19,7 +19,7 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW(String),
     BLOCK(Vec<Box<Expression>>),
-    APPLICATION { arg: Box<Expression>, body: Box<Expression> },
+    APPLICATION { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
     QUERY { source: Box<Expression>, field: Box<Expression> },
@@ -72,9 +72,9 @@ impl Parser<'_> {
         if self.curr_in(&[POUND]) {
             self.cursor.step_fwd();
             QUERY { source: Box::new(expr), field: Box::new(self.build_expression()) }
-        } else if self.curr_in(&[AT]) {
+        } else if self.curr_in(&[AT, ATAT]) {
             self.cursor.step_fwd();
-            APPLICATION { arg: Box::new(expr), body: Box::new(self.build_expression()) }
+            APPLICATION { arg: Box::new(expr), op: self.read_prev().clone(), body: Box::new(self.build_expression()) }
         } else { expr }
     }
 

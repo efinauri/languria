@@ -38,7 +38,7 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment) -> bool {
 }
 
 pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment, subscoping: bool) -> Value {
-    if subscoping { env.create_scope(); }
+    if subscoping { env.create_scope(false); }
     let mut result = NOTAVAL;
     for expr in exprs {
         let eval = eval_expr(&expr, env, es);
@@ -55,14 +55,33 @@ pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, 
     result
 }
 
-fn eval_application(body: &Box<Expression>, env: &mut Environment, es: &mut ErrorScribe, it: Value, ti: Value) -> Value {
-    env.create_scope();
-    env.curr_scope_mut().is_application = true;
-    env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
-    env.write(&String::from("_ti"), &ti, &Token::new(INTO, 0), es);
-    let ret = eval_expr(body, env, es);
+fn eval_application(arg: &Box<Expression>,
+                    op: Token,
+                    body: &Box<Expression>,
+                    env: &mut Environment,
+                    es: &mut ErrorScribe) -> Value {
+    env.create_scope(true);
+
+    let ret = if op.type_equals(&AT) {
+        let it = eval_expr(arg, env, es);
+        env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
+        eval_expr(body, env, es)
+    }
+    else {
+        let arg = eval_expr(arg, env, es);
+        if let ASSOCIATIONVAL { map, .. } = arg {
+            let mut ret = NOTAVAL;
+            for ((it, ti), idx) in map.iter().zip(0..) {
+                env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
+                env.write(&String::from("_ti"), &ti, &Token::new(INTO, 0), es);
+                env.write(&String::from("_idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
+                ret = eval_expr(body, env, es);
+            }
+        ret
+        } else { NOTAVAL }
+    };
     env.destroy_scope();
-    ret
+    return ret;
 }
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
@@ -83,7 +102,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         _ => {}
     }
 
-    if is_expr_applicable(expr, env) && !env.curr_scope().is_application { return LAMBDAVAL(Box::new(expr.clone())); }
+    if is_expr_applicable(expr, env) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
 
     match expr {
         Expression::VAR_RAW(_) => NOTAVAL, // unreachable because it's handled separately
@@ -118,9 +137,8 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             ASSOCIATIONVAL { map, default }
         }
         Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
-        Expression::APPLICATION { arg, body } => {
-            let it = eval_expr(arg, env, scribe);
-            eval_application(body, env, scribe, it, NOTAVAL)
+        Expression::APPLICATION { arg, op, body } => {
+            eval_application(arg, op.clone(), body, env, scribe)
         }
         Expression::BLOCK(exprs) => {
             evaluate_expressions(exprs, scribe, env, true)

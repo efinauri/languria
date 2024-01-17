@@ -21,16 +21,15 @@ use crate::errors::ErrorScribe;
                     }
                 }
                 (LITERAL(_), LITERAL(_)) |
-                (UNARY { op: _, expr: _ }, UNARY { op: _, expr: _ }) |
-                (BINARY { lhs: _, op: _, rhs: _ }, BINARY { lhs: _, op: _, rhs: _ }) |
-                (LOGIC { lhs: _, op: _, rhs: _ }, LOGIC { lhs: _, op: _, rhs: _ }) |
+                (UNARY { ..}, UNARY { .. }) |
+                (BINARY {.. }, BINARY {.. }) |
+                (LOGIC {.. }, LOGIC { .. }) |
                 (GROUPING(_), GROUPING(_)) |
-                (VAR_ASSIGN { varname: _, op: _, varval: _ },
-                    VAR_ASSIGN { varname: _, op: _, varval: _ }) |
+                (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
                 (VAR_RAW(_), VAR_RAW(_)) |
-                (APPLICATION { arg: _, body: _ }, APPLICATION { arg: _, body: _ }) |
+                (APPLICATION { .. }, APPLICATION { .. }) |
                 (ASSOCIATION(_), ASSOCIATION(_)) |
-                (QUERY { source: _, field: _ }, QUERY { source: _, field: _ }) |
+                (QUERY { .. }, QUERY { .. }) |
                 (NOTANEXPR, NOTANEXPR) => true,
                 (_, _) => false
             }
@@ -93,6 +92,7 @@ use crate::errors::ErrorScribe;
         dbg!(&expr);
         assert!(expr.type_equals(&APPLICATION {
             arg: Box::new(NOTANEXPR),
+            op: Token::debug(NOTATOKEN),
             body: Box::new(NOTANEXPR),
         }));
     }
