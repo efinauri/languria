@@ -104,7 +104,7 @@ mod tests {
             _ => { panic!("test failed") }
         };
         dbg!(&str);
-        assert!(str.eq("hello, \"dude\"!"));
+        assert_eq!(str, "hello, \"dude\"!");
     }
 
     #[test]

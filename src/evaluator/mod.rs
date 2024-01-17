@@ -64,7 +64,7 @@ fn eval_application(arg: &Box<Expression>,
 
     let ret = if op.type_equals(&AT) {
         let it = eval_expr(arg, env, es);
-        env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
+        env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
         eval_expr(body, env, es)
     }
     else {
@@ -72,9 +72,9 @@ fn eval_application(arg: &Box<Expression>,
         if let ASSOCIATIONVAL { map, .. } = arg {
             let mut ret = NOTAVAL;
             for ((it, ti), idx) in map.iter().zip(0..) {
-                env.write(&String::from("_it"), &it, &Token::new(INTO, 0), es);
-                env.write(&String::from("_ti"), &ti, &Token::new(INTO, 0), es);
-                env.write(&String::from("_idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
+                env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
+                env.write(&String::from("ti"), &ti, &Token::new(INTO, 0), es);
+                env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
                 ret = eval_expr(body, env, es);
             }
         ret
@@ -157,9 +157,9 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 STRING(str) => STRINGVAL(fill_in_string_tokens(str, env, scribe)),
                 INTEGER(int) => INTEGERVAL(*int),
                 FLOAT(flt) => FLOATVAL(*flt),
-                IT => { env.read(&"_it".to_string()).unwrap().clone() }
-                TI => { env.read(&"_ti".to_string()).unwrap().clone() }
-                IDX => { env.read(&"_idx".to_string()).unwrap().clone() }
+                IT => { env.read(&"it".to_string()).unwrap().clone() }
+                TI => { env.read(&"ti".to_string()).unwrap().clone() }
+                IDX => { env.read(&"idx".to_string()).unwrap().clone() }
                 _ => { ERRVAL }
             }
         }

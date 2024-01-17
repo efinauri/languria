@@ -119,6 +119,7 @@ mod tests {
             &vec![
                 Box::new(APPLICATION {
                     arg: int_expr(2),
+                    op: Token::debug(AT),
                     body: Box::new(BINARY {
                         lhs: str_expr("s"),
                         op: Token::debug(MUL),

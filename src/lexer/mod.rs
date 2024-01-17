@@ -228,7 +228,14 @@ impl<'a> Lexer<'_> {
             match symbol {
                 '\\' => {
                     str.pop();
-                    str.push(self.consume().clone());
+                    if self.can_consume() {
+                        let next = self.consume();
+                        match next {
+                            't' => { str.push('\t'); }
+                            'n' => { str.push('\n'); }
+                            _=> { str.push(next.clone()); }
+                        }
+                    }
                 }
                 '\n' => {
                     self.scribe.annotate_error(
