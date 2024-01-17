@@ -66,19 +66,30 @@ fn eval_application(arg: &Box<Expression>,
         let it = eval_expr(arg, env, es);
         env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
         eval_expr(body, env, es)
-    }
-    else {
+    } else {
         let arg = eval_expr(arg, env, es);
+        let mut ret = NOTAVAL;
         if let ASSOCIATIONVAL { map, .. } = arg {
-            let mut ret = NOTAVAL;
             for ((it, ti), idx) in map.iter().zip(0..) {
                 env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
                 env.write(&String::from("ti"), &ti, &Token::new(INTO, 0), es);
                 env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
                 ret = eval_expr(body, env, es);
             }
-        ret
-        } else { NOTAVAL }
+            ret
+        } else if let STRINGVAL(str) = arg {
+            for (it, idx) in str.chars().zip(0..) {
+                env.write(&String::from("it"), &STRINGVAL(it.to_string()), &Token::new(INTO, 0), es);
+                env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
+                ret = eval_expr(body, env, es);
+            }
+            ret
+        }
+
+
+        else {
+            NOTAVAL
+        }
     };
     env.destroy_scope();
     return ret;
