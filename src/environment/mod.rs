@@ -1,5 +1,5 @@
 use std::cmp::{max, min, Ordering};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Neg;
@@ -96,7 +96,7 @@ pub enum Value {
     BOOLEANVAL(bool),
     LAMBDAVAL(Box<Expression>),
     OPTIONVAL(Option<Box<Self>>),
-    ASSOCIATIONVAL {map: HashMap<Box<Self>, Box<Self>>, default: Option<Box<Self>>},
+    ASSOCIATIONVAL { map: BTreeMap<Box<Self>, Box<Self>>, default: Option<Box<Self>> },
     RETURNVAL(Box<Self>),
     ERRVAL,
     NOTAVAL,
@@ -113,7 +113,7 @@ impl Hash for Value {
             BOOLEANVAL(bool) => { bool.hash(state); }
             LAMBDAVAL(_lmb) => {}
             OPTIONVAL(opt) => { opt.hash(state); }
-            ASSOCIATIONVAL{map, ..} => { map.hasher(); }
+            ASSOCIATIONVAL { map, .. } => { map.hash(state); }
             RETURNVAL(ret) => { ret.hash(state); }
             ERRVAL => {}
             NOTAVAL => {}
@@ -155,6 +155,15 @@ impl PartialOrd for Value {
     }
 }
 
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.partial_cmp(other) {
+            None => { Ordering::Less }
+            Some(cmp) => { cmp }
+        }
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.display_and_debug(f)
@@ -184,7 +193,7 @@ impl Value {
             STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL(_) => { f.write_str("lambda") }
-            ASSOCIATIONVAL{map, default} => {
+            ASSOCIATIONVAL { map, default } => {
                 let mut str = map.iter()
                     .map(|(k, v)| format!("{}: {}, ", k, v))
                     .reduce(|str1, str2| str1 + &*str2)
@@ -208,6 +217,7 @@ impl Value {
             (STRINGVAL(_), STRINGVAL(_)) |
             (BOOLEANVAL(_), BOOLEANVAL(_)) |
             (ERRVAL, ERRVAL) |
+            (LAMBDAVAL(_), LAMBDAVAL(_)) |
             (NOTAVAL, NOTAVAL) => { true }
             (_, _) => false
         }

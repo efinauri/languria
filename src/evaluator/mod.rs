@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Deref;
 
 use crate::environment::{Environment, print_eol, Value};
 use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe};
 use crate::errors::ErrorType::UNASSIGNEDVAR;
-use crate::lexer::{Token, TokenType};
+use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
@@ -14,7 +14,7 @@ mod tests;
 pub fn is_expr_applicable(expr: &Expression, env: &Environment) -> bool {
     match expr {
         Expression::VAR_RAW(varname)
-        => { env.read(varname).is_some() } // should never happen
+        => { env.read(varname).is_some_and(|val| val.type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR)))) }
 
         Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
         Expression::NOTANEXPR => { false }
@@ -102,11 +102,11 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             };
         }
         Expression::ASSOCIATION(pairs) => {
-            let mut map = HashMap::new();
+            let mut map = BTreeMap::new();
             let mut default = None;
             for (k, v) in pairs {
                 if let Expression::LITERAL(tok) = k.deref() {
-                    if tok.type_equals(&TokenType::UNDERSCORE) {
+                    if tok.type_equals(&UNDERSCORE) {
                         default = Some(Box::new(eval_expr(v, env, scribe)));
                         continue;
                     }
