@@ -62,12 +62,12 @@ pub enum TokenType {
     DIVASSIGN,
     PLUSASSIGN,
     MINUSASSIGN,
-    INTO,
     // others
     AT,
     ATAT,
     // associations
     POUND,
+    POUNDPOUND,
     COLON,
     COMMA,
     DOT,
@@ -85,13 +85,11 @@ lazy_static! {
         ("return", RETURN),
         ("true", TRUE),
         ("false", FALSE),
-        ("into", INTO),
         ("and", AND),
         ("xor", XOR),
         ("or", OR)
 ]);
 }
-
 
 #[derive(PartialEq, Clone)]
 pub struct Token {
@@ -106,12 +104,8 @@ impl Token {
         Token { ttype, line: 0 }
     }
 
-    pub(crate) fn new(ttype: TokenType, line: usize) -> Token {
-        Token {
-            ttype,
-            line,
-        }
-    }
+    pub fn new(ttype: TokenType, line: usize) -> Token { Token { ttype, line } }
+
     pub fn type_equals(&self, other: &TokenType) -> bool {
         return match (&self.ttype, other) {
             (IDENTIFIER(_), IDENTIFIER(_)) |
@@ -190,11 +184,7 @@ impl<'a> Lexer<'_> {
                 _ => { break; }
             }
         }
-        if is_float {
-            FLOAT(f64::from_str(str.as_str()).unwrap())
-        } else {
-            INTEGER(i32::from_str(str.as_str()).unwrap())
-        }
+        if is_float { FLOAT(f64::from_str(str.as_str()).unwrap()) } else { INTEGER(i32::from_str(str.as_str()).unwrap()) }
     }
 
     fn skip_comment(&mut self) {
@@ -234,7 +224,7 @@ impl<'a> Lexer<'_> {
                         match next {
                             't' => { str.push('\t'); }
                             'n' => { str.push('\n'); }
-                            _=> { str.push(next.clone()); }
+                            _ => { str.push(next.clone()); }
                         }
                     }
                 }
@@ -276,8 +266,8 @@ impl<'a> Lexer<'_> {
                 '.' => DOT,
                 '?' => QUESTIONMARK,
                 '_' => UNDERSCORE,
-                '#' => POUND,
                 '%' => MODULO,
+                '#' => if self.consume_next_if_eq('#') {POUNDPOUND} else { POUND },
                 '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
@@ -304,7 +294,7 @@ impl<'a> Lexer<'_> {
                 'a'..='z' | 'A'..='Z' => { self.consume_alphabet(symbol) }
                 _ => {
                     self.scribe.annotate_error(
-                        Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol }));
+                        Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
                     NOTATOKEN
                 }
             };

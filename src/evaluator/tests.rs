@@ -57,6 +57,7 @@ mod tests {
                             (str_expr("s"), int_expr(2))
                         ])
                     ),
+                    op: Token::debug(POUNDPOUND),
                     field: str_expr("s"),
                 })
             ],
@@ -79,6 +80,7 @@ mod tests {
                             (Box::new(LITERAL(Token::debug(UNDERSCORE))), int_expr(2))
                         ])
                     ),
+                    op: Token::debug(POUNDPOUND),
                     field: str_expr("r"),
                 })
             ],

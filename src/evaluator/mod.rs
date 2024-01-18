@@ -2,8 +2,8 @@ use std::ops::Deref;
 
 use crate::environment::{Environment, print_eol, Value, ValueMap};
 use crate::environment::Value::*;
-use crate::errors::{Error, ErrorScribe};
-use crate::errors::ErrorType::UNASSIGNEDVAR;
+use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::errors::ErrorType::EVAL_UNASSIGNED_VAR;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -27,7 +27,7 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment) -> bool {
 
         Expression::BINARY { rhs, lhs, .. } |
         Expression::LOGIC { rhs, lhs, .. } |
-        Expression::QUERY { source: rhs, field: lhs }
+        Expression::QUERY { source: rhs, field: lhs, .. }
         => { is_expr_applicable(rhs, env) || is_expr_applicable(lhs, env) }
         Expression::BLOCK(exprs)
         => { exprs.iter().any(|expr| is_expr_applicable(expr, env)) }
@@ -42,7 +42,11 @@ pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, 
     for expr in exprs {
         let eval = eval_expr(&expr, env, es);
         match eval {
-            NOTAVAL => { continue; }
+            //exit on first evaluation error. careful about side effects.
+            ERRVAL => {
+                result = eval;
+                break;
+            }
             RETURNVAL(val) => {
                 if subscoping { env.destroy_scope(); }
                 return val.deref().clone();
@@ -63,33 +67,59 @@ fn eval_application(arg: &Box<Expression>,
 
     let ret = if op.type_equals(&AT) {
         let it = eval_expr(arg, env, es);
-        env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
+        env.write_binding(&String::from("it"), &it);
         eval_expr(body, env, es)
     } else {
         let arg = eval_expr(arg, env, es);
         let mut ret = NOTAVAL;
         if let ASSOCIATIONVAL(map) = arg {
             for ((it, ti), idx) in map.iter().zip(0..) {
-                env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
-                env.write(&String::from("ti"), &ti, &Token::new(INTO, 0), es);
-                env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
+                env.write_binding(&String::from("it"), &it);
+                env.write_binding(&String::from("ti"), &ti);
+                env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
                 ret = eval_expr(body, env, es);
             }
             ret
         } else if let STRINGVAL(str) = arg {
             for (it, idx) in str.chars().zip(0..) {
-                env.write(&String::from("it"), &STRINGVAL(it.to_string()), &Token::new(INTO, 0), es);
-                env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
+                env.write_binding(&String::from("it"), &STRINGVAL(it.to_string()));
+                env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
                 ret = eval_expr(body, env, es);
             }
             ret
         } else {
-            NOTAVAL
+            es.annotate_error(Error::on_line(env.curr_line,
+                                             ErrorType::EVAL_ITER_APPL_ON_NONITER(arg)));
+            ERRVAL
         }
     };
     env.destroy_scope();
     return ret;
 }
+
+fn resolve_query(
+    expression: Option<Box<Expression>>,
+    value: Option<Value>,
+    env: &mut Environment,
+    scribe: &mut ErrorScribe,
+    op: &Token,
+) -> Value {
+    // if something was successfully queried, it is first evaluated (if it's not a proper value yet) and then returned.
+    // keynotfound is thrown otherwise.
+    match (&op.ttype, expression, value) {
+        (POUND, Some(ex), None) => { OPTIONVAL(Some(Box::new(eval_expr(&ex, env, scribe)))) }
+        (POUND, None, Some(val)) => { OPTIONVAL(Some(Box::new(val.clone()))) }
+        (POUND, None, None) => { OPTIONVAL(None) }
+        (POUNDPOUND, Some(ex), None) => { eval_expr(&ex, env, scribe) }
+        (POUNDPOUND, None, Some(val)) => { val.clone() }
+        (_, _, _) => {
+            scribe.annotate_error(Error::on_line(env.curr_line,
+                                                 ErrorType::EVAL_KEY_NOT_FOUND));
+            ERRVAL
+        }
+    }
+}
+
 
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
@@ -97,7 +127,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             let read_val = env.read(varname);
             if read_val.is_none() {
                 scribe.annotate_error(Error::on_line(env.curr_line,
-                                                     UNASSIGNEDVAR { varname: varname.clone() }));
+                                                     EVAL_UNASSIGNED_VAR(varname.clone())));
                 return ERRVAL;
             }
             let read_val = read_val.unwrap().clone();
@@ -112,32 +142,32 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
     if is_expr_applicable(expr, env) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
 
     match expr {
-        Expression::VAR_RAW(_) => NOTAVAL, // unreachable because it's handled separately
-        Expression::QUERY { source, field } => {
+        Expression::VAR_RAW(_) => ERRVAL, // unreachable because it's handled above
+        Expression::QUERY { source, op, field } => {
             let field = eval_expr(field, env, scribe);
             let source = eval_expr(source, env, scribe);
             return match source {
                 ASSOCIATIONVAL(map) => {
+                    let mut query_expr = None;
+                    let mut query_val = None;
                     if let Some(val) = map.get(&field) {
-                        return if let LAZYVAL(ex) = val {
-                            eval_expr(&ex, env, scribe)
-                        } else {
-                            val.clone()
-                        };
+                        if let LAZYVAL(ex) = val { query_expr = Some(ex); } else { query_val = Some(val); };
                     } else if let Some(val) = map.default {
-                        return if let LAZYVAL(ex) = val.deref() {
-                            eval_expr(&ex, env, scribe)
-                        } else {
-                            *val.clone()
-                        };
-                    } else { NOTAVAL }
+                        if let LAZYVAL(ex) = val.deref() { query_expr = Some(ex.clone()); } else { query_val = Some(*val); };
+                    }
+                    return resolve_query(query_expr, query_val, env, scribe, op);
                 }
-                _ => NOTAVAL
+                _ => {
+                    scribe.annotate_error(Error::on_line(env.curr_line,
+                                                         ErrorType::EVAL_UNQUERIABLE(source)));
+                    ERRVAL
+                }
             };
         }
         Expression::ASSOCIATION(pairs) => {
             let mut map = ValueMap::new();
-            // all code branching needs to be lazily evaluated
+            // all code branching needs to be lazily evaluated, even the ones that aren't applicables
+            // (because of side effects)
             for (k, v) in pairs {
                 if let Expression::LITERAL(tok) = k.deref() {
                     if tok.type_equals(&UNDERSCORE) {
@@ -158,11 +188,15 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         Expression::BLOCK(exprs) => {
             evaluate_expressions(exprs, scribe, env, true)
         }
-        Expression::NOTANEXPR => { NOTAVAL }
+        Expression::NOTANEXPR => {
+            scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_INVALID_EXPR));
+            ERRVAL
+        }
         Expression::GROUPING(expr) => { eval_expr(expr, env, scribe) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
             let val = eval_expr(varval, env, scribe);
-            env.write(varname, &val, op, scribe)
+            if val.type_equals(&ERRVAL) { return val; }
+            env.write(varname, &val, op)
         }
         Expression::LITERAL(value) => {
             match &value.ttype {
@@ -175,62 +209,92 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 IT => { env.read(&"it".to_string()).unwrap().clone() }
                 TI => { env.read(&"ti".to_string()).unwrap().clone() }
                 IDX => { env.read(&"idx".to_string()).unwrap().clone() }
-                _ => { ERRVAL }
+                _ => {
+                    scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_INVALID_LITERAL));
+                    ERRVAL
+                }
             }
         }
 
         Expression::UNARY { op, expr } => {
-            let expr = eval_expr(expr, env, scribe);
-            match op.ttype {
-                BANG => { expr.bang_it() }
-                MINUS => { expr.minus_it() }
+            let val = eval_expr(expr, env, scribe);
+            let ret = match op.ttype {
+                BANG => { val.bang_it() }
+                MINUS => { val.minus_it() }
                 DOLLAR => {
-                    expr.print_it(op.line, env, None);
-                    expr
+                    val.print_it(op.line, env, None);
+                    val.clone()
                 }
-                _ => { ERRVAL }
+                _ => {
+                    ERRVAL
+                }
+            };
+            if ret.type_equals(&ERRVAL) {
+                scribe.annotate_error(Error::on_line(
+                    env.curr_line, ErrorType::EVAL_INVALID_OP(
+                        op.clone().ttype, vec![val.clone()])));
             }
+            ret
         }
 
         Expression::LOGIC { lhs, op, rhs } => {
-            let elhs = eval_expr(lhs, env, scribe);
-
-            match (&op.ttype, elhs.as_bool_val()) {
+            let lval = eval_expr(lhs, env, scribe);
+            if lval.as_bool_val().type_equals(&ERRVAL) {
+                scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::NOT_BOOLEANABLE(lval)));
+                return ERRVAL;
+            }
+            let ret = match (&op.ttype, lval.as_bool_val()) {
                 (AND, BOOLEANVAL(bool)) => {
-                    if !bool { return elhs; } else { eval_expr(rhs, env, scribe) }
+                    if !bool { return lval; } else { eval_expr(rhs, env, scribe) }
                 }
                 (OR, BOOLEANVAL(bool)) => {
-                    if bool { return elhs; } else { eval_expr(rhs, env, scribe) }
+                    if bool { return lval; } else { eval_expr(rhs, env, scribe) }
                 }
                 (XOR, BOOLEANVAL(bool)) => {
-                    let ehrs = eval_expr(rhs, env, scribe).as_bool_val();
-                    if bool { return ehrs.bang_it(); } else { ehrs }
+                    let ehrs = eval_expr(rhs, env, scribe);
+                    if bool { ehrs.bang_it() } else { ehrs }
                 }
-                _ => { NOTAVAL }
+                _ => {
+                    ERRVAL
+                }
+            };
+            if ret.as_bool_val().type_equals(&ERRVAL) {
+                scribe.annotate_error(
+                    Error::on_line(env.curr_line, ErrorType::NOT_BOOLEANABLE(ret.clone())));
+                return ERRVAL;
             }
+            ret
         }
         Expression::BINARY { lhs, op, rhs } => {
-            let elhs = eval_expr(lhs, env, scribe);
-            let erhs = eval_expr(rhs, env, scribe);
+            let lval = eval_expr(lhs, env, scribe);
+            let rval = eval_expr(rhs, env, scribe);
 
-            match op.ttype {
+            let ret = match op.ttype {
                 DOLLAR => {
-                    elhs.print_it(op.line, env, Some(rhs));
-                    elhs
+                    lval.print_it(op.line, env, Some(rhs));
+                    lval.clone()
                 }
-                MINUS => { elhs.minus_them(&erhs) }
-                PLUS => { elhs.plus_them(&erhs) }
-                MUL => { elhs.mul_them(&erhs) }
-                DIV => { elhs.div_them(&erhs) }
-                MODULO => { elhs.modulo_them(&erhs) }
-                GT => { elhs.cmp_them(&erhs, |a, b| a > b) }
-                GTE => { elhs.cmp_them(&erhs, |a, b| a >= b) }
-                LT => { elhs.cmp_them(&erhs, |a, b| a < b) }
-                LTE => { elhs.cmp_them(&erhs, |a, b| a <= b) }
-                EQ => { elhs.cmp_them(&erhs, |a, b| a == b) }
-                UNEQ => { elhs.cmp_them(&erhs, |a, b| a != b) }
-                _ => { ERRVAL }
+                MINUS => { lval.minus_them(&rval) }
+                PLUS => { lval.plus_them(&rval) }
+                MUL => { lval.mul_them(&rval) }
+                DIV => { lval.div_them(&rval) }
+                MODULO => { lval.modulo_them(&rval) }
+                GT => { lval.cmp_them(&rval, |a, b| a > b) }
+                GTE => { lval.cmp_them(&rval, |a, b| a >= b) }
+                LT => { lval.cmp_them(&rval, |a, b| a < b) }
+                LTE => { lval.cmp_them(&rval, |a, b| a <= b) }
+                EQ => { lval.cmp_them(&rval, |a, b| a == b) }
+                UNEQ => { lval.cmp_them(&rval, |a, b| a != b) }
+                _ => {
+                    ERRVAL
+                }
+            };
+            if ret.type_equals(&ERRVAL) {
+                scribe.annotate_error(Error::on_line(
+                    env.curr_line, ErrorType::EVAL_INVALID_OP(
+                        op.clone().ttype, vec![lval.clone(), rval.clone()])));
             }
+            ret
         }
     }
 }
@@ -247,7 +311,7 @@ fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScri
                     result += &*val.to_string();
                     varname.clear();
                 } else {
-                    es.annotate_error(Error::on_line(41, UNASSIGNEDVAR { varname: varname.clone() }));
+                    es.annotate_error(Error::on_line(env.curr_line, EVAL_UNASSIGNED_VAR(varname.clone())));
                     break;
                 }
             }

@@ -38,6 +38,10 @@ pub trait WalksCollection<'a, V: 'a, I: 'a>
         self.mut_cnt().step_fwd();
         self.read_prev()
     }
+    fn try_read_curr(&'a self) -> Option<&I> {
+        if self.arr().length() <= self.cnt().get() { None } else { Some(self.read_curr()) }
+    }
+
 }
 
 #[cfg(test)]

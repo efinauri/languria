@@ -22,7 +22,7 @@ pub enum Expression {
     APPLICATION { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
-    QUERY { source: Box<Expression>, field: Box<Expression> },
+    QUERY { source: Box<Expression>, op: Token, field: Box<Expression> },
     NOTANEXPR,
 }
 
@@ -32,7 +32,7 @@ pub enum AssociationState {
     MAP,
 }
 
-const ASSIGN_TOKENS: [TokenType; 8] = [ASSIGN, INTO, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN];
+const ASSIGN_TOKENS: [TokenType; 7] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
@@ -69,9 +69,9 @@ impl Parser<'_> {
 
     fn build_expression(&mut self) -> Expression {
         let expr = self.logic();
-        if self.curr_in(&[POUND]) {
+        if self.curr_in(&[POUND, POUNDPOUND]) {
             self.cursor.step_fwd();
-            QUERY { source: Box::new(expr), field: Box::new(self.build_expression()) }
+            QUERY { source: Box::new(expr), op: self.read_prev().clone(), field: Box::new(self.build_expression()) }
         } else if self.curr_in(&[AT, ATAT]) {
             self.cursor.step_fwd();
             APPLICATION { arg: Box::new(expr), op: self.read_prev().clone(), body: Box::new(self.build_expression()) }
@@ -168,7 +168,7 @@ impl Parser<'_> {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
                 if self.tokens.is_empty() { 0 } else { self.read_curr().line },
-                ErrorType::EXPECTEDLITERAL { found: EOF }));
+                ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
         let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
@@ -193,9 +193,7 @@ impl Parser<'_> {
             }
             _ => {
                 self.scribe.annotate_error(Error::on_line(
-                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN {
-                        ttype: ttype.clone()
-                    }));
+                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN(ttype.clone())));
                 self.cursor.step_fwd();
                 NOTANEXPR
             }
@@ -217,6 +215,7 @@ impl Parser<'_> {
                 }
             }
         }
+        self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
         ASSOCIATION(keys.iter().map(|k| k.to_owned()).zip(vals).collect())
     }
@@ -242,19 +241,18 @@ impl Parser<'_> {
         self.cursor.step_fwd();
         if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
             self.cursor.step_fwd();
-            return match &self.peek_back(2).ttype {
-                IDENTIFIER(str) => {
-                    VAR_ASSIGN {
-                        varname: str.clone(),
-                        op: self.read_prev().clone(),
-                        varval: Box::new(self.build_expression()),
-                    }
+            return if let IDENTIFIER(str) = &self.peek_back(2).ttype {
+                VAR_ASSIGN {
+                    varname: str.clone(),
+                    op: self.read_prev().clone(),
+                    varval: Box::new(self.build_expression()),
                 }
-                _ => {
-                    self.scribe.annotate_error(Error::on_line(self.read_curr().line,
-                                                              ErrorType::BADASSIGNMENTLHS));
-                    NOTANEXPR
-                }
+            } else { // should be unreachable since this fn is only called when the if let is satisfied.
+                self.scribe.annotate_error(Error::on_line(self.read_curr().line,
+                                                          ErrorType::PARSER_UNEXPECTED_TOKEN(
+                                                              self.read_curr().ttype.clone()
+                                                          )));
+                NOTANEXPR
             };
         }
         VAR_RAW(str.clone())
@@ -264,8 +262,8 @@ impl Parser<'_> {
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
         if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
             self.scribe.annotate_error(Error::on_line(
-                0,
-                ErrorType::EXPECTEDTOKEN { ttype }));
+                self.try_read_curr().map(|tok| tok.line).unwrap_or(0),
+                ErrorType::PARSER_EXPECTED_TOKEN(ttype)));
             return false;
         }
         true

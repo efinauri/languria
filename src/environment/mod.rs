@@ -5,7 +5,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Neg};
 
 use crate::environment::Value::*;
-use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -39,14 +38,18 @@ impl Environment {
         }
         None
     }
-    pub fn write(&mut self, varname: &String, varval: &Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
+    pub fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let limit = self.scopes.len() - 1;
         for (scope, i) in &mut self.scopes.iter_mut().zip(0..) {
             if scope.variables.contains_key(varname) || i == limit {
-                return scope.write(varname, varval, op, scribe).clone();
+                return scope.write(varname, varval, op).clone();
             }
         }
         NOTAVAL
+    }
+
+    pub fn write_binding(&mut self, varname: &String, varval: &Value) -> Value {
+        self.write(varname, varval, &Token::new(ASSIGN, self.curr_line))
     }
 }
 
@@ -68,27 +71,24 @@ impl Scope {
 
     fn read(&self, varname: &String) -> Option<&Value> { self.variables.get(varname) }
 
-    fn write(&mut self, varname: &String, varval: &Value, op: &Token, scribe: &mut ErrorScribe) -> Value {
+    fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let old_val = &self.read(varname);
         let val_to_write = match old_val {
             None => { varval.clone() }
             Some(ov) => {
                 match op.ttype {
-                    ASSIGN | INTO => { varval.clone() }
+                    ASSIGN => { varval.clone() }
                     MINASSIGN => { varval.min_them(ov) }
                     MAXASSIGN => { varval.max_them(ov) }
                     PLUSASSIGN => { varval.plus_them(ov) }
                     MINUSASSIGN => { ov.minus_them(&varval) }
                     MULASSIGN => { varval.mul_them(ov) }
                     DIVASSIGN => { ov.div_them(&varval) }
-                    _ => { NOTAVAL }
+                    _ => { ERRVAL }
                 }
             }
         };
-        if !op.type_equals(&INTO) && old_val.as_ref().is_some_and(|val| !val.type_equals(&val_to_write)) {
-            scribe.annotate_error(Error::on_line(42, ErrorType::EXPECTEDTYPE));
-            return ERRVAL;
-        }
+        if val_to_write.type_equals(&ERRVAL) { return ERRVAL; }
         self.variables.insert(varname.clone(), val_to_write.clone());
         val_to_write.clone()
     }
@@ -211,12 +211,12 @@ pub fn print_eol(env: &mut Environment, line: &usize) -> Value {
 impl Value {
     fn display_and_debug(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            LAZYVAL(_) => { f.write_str("\\") }
+            LAZYVAL(_) => { f.write_str("(not yet evaluated)") }
             INTEGERVAL(int) => { f.write_str(&*int.to_string()) }
             FLOATVAL(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
             STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
-            LAMBDAVAL(_) => { f.write_str("lambda") }
+            LAMBDAVAL(_) => { f.write_str("applicable") }
             ASSOCIATIONVAL(map) => {
                 let mut str = map.map.iter()
                     .map(|(k, v)| format!("{}: {}, ", k, v))
@@ -230,7 +230,12 @@ impl Value {
             NOTAVAL => { f.write_str("no input.") }
             ERRVAL => { f.write_str("ERR") }
             RETURNVAL(val) => { f.write_str(&*val.to_string()) }
-            OPTIONVAL(_val) => { f.write_str("TODO") }
+            OPTIONVAL(val) => {
+                match val {
+                    None => { f.write_str("<>") }
+                    Some(v) => { f.write_str(&*format!("<{}>", v)) }
+                }
+            }
         }
     }
 
@@ -365,5 +370,10 @@ impl Value {
         }
     }
 
-    pub fn cmp_them(&self, other: &Value, cmp: fn(&Value, &Value) -> bool) -> Value { BOOLEANVAL(cmp(self, other)) }
+    pub fn cmp_them(&self, other: &Value, cmp: fn(&Value, &Value) -> bool) -> Value {
+        match self.partial_cmp(other) {
+            None => { ERRVAL }
+            Some(_) => { BOOLEANVAL(cmp(self, other)) }
+        }
+    }
 }

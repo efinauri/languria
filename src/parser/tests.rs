@@ -74,6 +74,7 @@ use crate::errors::ErrorScribe;
         dbg!(&expr);
         assert!(expr.type_equals(&QUERY {
             source: Box::new(NOTANEXPR),
+            op: Token::debug(POUNDPOUND),
             field: Box::new(NOTANEXPR),
         }));
     }

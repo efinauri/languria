@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::io::{stdout, Write};
 use std::process::exit;
 
+use crate::environment::Value;
 use crate::lexer::TokenType;
 
 #[derive(PartialEq, Debug)]
@@ -33,7 +34,7 @@ impl ErrorScribe {
     }
 
     pub fn annotate_error(&mut self, e: Error) {
-        println!("{}", &e);
+        eprintln!("{}", &e);
         stdout().flush().unwrap();
         self.errors.push(e);
         self.enact_termination_policy();
@@ -53,17 +54,21 @@ impl ErrorScribe {
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum ErrorType {
-    //lexical errors
-    LEXER_UNEXPECTED_SYMBOL { symbol: char },
+    LEXER_UNEXPECTED_SYMBOL(char),
     LEXER_BAD_STR_FMT,
-    // parser errors
-    EXPECTEDLITERAL { found: TokenType },
-    EXPECTEDTOKEN { ttype: TokenType },
-    EXPECTEDTYPE,
-    BADASSIGNMENTLHS,
-    // eval errors
-    UNASSIGNEDVAR { varname: String },
-    PARSER_UNEXPECTED_TOKEN { ttype: TokenType },
+
+    PARSER_EXPECTED_LITERAL(TokenType),
+    PARSER_EXPECTED_TOKEN(TokenType),
+    PARSER_UNEXPECTED_TOKEN(TokenType),
+
+    EVAL_UNASSIGNED_VAR(String),
+    EVAL_ITER_APPL_ON_NONITER(Value),
+    EVAL_UNQUERIABLE(Value),
+    EVAL_KEY_NOT_FOUND,
+    EVAL_INVALID_EXPR,
+    EVAL_INVALID_LITERAL,
+    EVAL_INVALID_OP(TokenType, Vec<Value>),
+    NOT_BOOLEANABLE(Value),
 }
 
 #[derive(Debug)]
@@ -91,14 +96,20 @@ impl Red for String {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let msg = match &self.etype {
-            ErrorType::LEXER_UNEXPECTED_SYMBOL { symbol } => format!("unexpected character: {}", symbol),
+            ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol) => format!("unexpected character: {}", symbol),
             ErrorType::LEXER_BAD_STR_FMT => String::from("string wasn't closed."),
-            ErrorType::EXPECTEDLITERAL { found } => format!("expected literal, found: {:?}", found),
-            ErrorType::EXPECTEDTOKEN { ttype } => format!("expected this token: {:?}", ttype),
-            ErrorType::EXPECTEDTYPE => String::from("attempting to change the variable type without using 'into'"),
-            ErrorType::BADASSIGNMENTLHS => String::from("only identifiers can be assigned values."),
-            ErrorType::UNASSIGNEDVAR { varname } => format!("uninitialized variable: {}", varname),
-            ErrorType::PARSER_UNEXPECTED_TOKEN { ttype} => format!("unexpected token: {:?}", ttype),
+            ErrorType::PARSER_EXPECTED_LITERAL(found) => format!("expected literal, found: {:?}", found),
+            ErrorType::PARSER_EXPECTED_TOKEN(ttype) => format!("expected this token: {:?}", ttype),
+            ErrorType::PARSER_UNEXPECTED_TOKEN(ttype) => format!("unexpected token: {:?}", ttype),
+            ErrorType::EVAL_UNASSIGNED_VAR(varname) => format!("uninitialized variable: {}", varname),
+            ErrorType::EVAL_ITER_APPL_ON_NONITER(val) => format!("cannot use @@ to feed `{}`", val),
+            ErrorType::EVAL_UNQUERIABLE(val) => format!("`{}` cannot be queried", val),
+            ErrorType::EVAL_KEY_NOT_FOUND => "key not found".to_string(),
+            ErrorType::EVAL_INVALID_EXPR => "could not parse this line".to_string(),
+            ErrorType::EVAL_INVALID_LITERAL => "invalid literal".to_string(),
+            ErrorType::EVAL_INVALID_OP(ttype, operands) =>
+                format!("cannot apply `{:?}` to operands `{:?}`", ttype, operands),
+            ErrorType::NOT_BOOLEANABLE(val) => format!("cannot treat `{}` as a boolean value", val)
         };
         f.write_str(&*(self.err_location() + &*msg).red())
     }
