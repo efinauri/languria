@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
 use std::ops::Deref;
 
-use crate::environment::{Environment, print_eol, Value};
+use crate::environment::{Environment, print_eol, Value, ValueMap};
 use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe};
 use crate::errors::ErrorType::UNASSIGNEDVAR;
@@ -69,8 +68,8 @@ fn eval_application(arg: &Box<Expression>,
     } else {
         let arg = eval_expr(arg, env, es);
         let mut ret = NOTAVAL;
-        if let ASSOCIATIONVAL { map, .. } = arg {
-            for ((it, ti), idx) in map.iter().zip(0..) {
+        if let ASSOCIATIONVAL(map) = arg {
+            for ((it, ti), idx) in map.keys.iter().zip(map.values).zip(0..) {
                 env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
                 env.write(&String::from("ti"), &ti, &Token::new(INTO, 0), es);
                 env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);
@@ -84,10 +83,7 @@ fn eval_application(arg: &Box<Expression>,
                 ret = eval_expr(body, env, es);
             }
             ret
-        }
-
-
-        else {
+        } else {
             NOTAVAL
         }
     };
@@ -118,34 +114,42 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
     match expr {
         Expression::VAR_RAW(_) => NOTAVAL, // unreachable because it's handled separately
         Expression::QUERY { source, field } => {
+            let field = eval_expr(field, env, scribe);
             let source = eval_expr(source, env, scribe);
             return match source {
-                ASSOCIATIONVAL { map, default } => {
-                    let field = eval_expr(field, env, scribe);
+                ASSOCIATIONVAL(map) => {
                     if let Some(val) = map.get(&field) {
-                        return val.deref().clone();
-                    } else if let Some(val) = default {
-                        return val.deref().clone();
+                        return if let LAZYVAL(ex) = val {
+                            eval_expr(&ex, env, scribe)
+                        } else {
+                            val.clone()
+                        };
+                    } else if let Some(val) = map.default {
+                        return if let LAZYVAL(ex) = val.deref() {
+                            eval_expr(&ex, env, scribe)
+                        } else {
+                            *val.clone()
+                        };
                     } else { NOTAVAL }
                 }
                 _ => NOTAVAL
             };
         }
         Expression::ASSOCIATION(pairs) => {
-            let mut map = BTreeMap::new();
-            let mut default = None;
+            let mut map = ValueMap::new();
+            // all code branching needs to be lazily evaluated
             for (k, v) in pairs {
                 if let Expression::LITERAL(tok) = k.deref() {
                     if tok.type_equals(&UNDERSCORE) {
-                        default = Some(Box::new(eval_expr(v, env, scribe)));
+                        map.default = Some(Box::new(LAZYVAL(v.clone())));
                         continue;
                     }
                 }
-                let k = Box::new(eval_expr(k, env, scribe));
-                let v = Box::new(eval_expr(v, env, scribe));
+                let k = eval_expr(k, env, scribe);
+                let v = LAZYVAL(v.clone());
                 map.insert(k, v);
             }
-            ASSOCIATIONVAL { map, default }
+            ASSOCIATIONVAL(map)
         }
         Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
         Expression::APPLICATION { arg, op, body } => {

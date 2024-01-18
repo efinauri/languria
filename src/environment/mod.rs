@@ -1,8 +1,7 @@
 use std::cmp::{max, min, Ordering};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::Neg;
+use std::ops::{Deref, Neg};
 
 use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
@@ -102,30 +101,43 @@ pub enum Value {
     BOOLEANVAL(bool),
     LAMBDAVAL(Box<Expression>),
     OPTIONVAL(Option<Box<Self>>),
-    ASSOCIATIONVAL { map: BTreeMap<Box<Self>, Box<Self>>, default: Option<Box<Self>> },
+    ASSOCIATIONVAL(ValueMap),
     RETURNVAL(Box<Self>),
+    LAZYVAL(Box<Expression>),
     ERRVAL,
     NOTAVAL,
 }
 
-impl Eq for Value {}
+#[derive(Clone)]
+pub struct ValueMap {
+    pub(crate) keys: Vec<Box<Value>>,
+    pub(crate) values: Vec<Box<Value>>,
+    pub(crate) default: Option<Box<Value>>,
+}
 
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            INTEGERVAL(int) => { int.hash(state); }
-            FLOATVAL(flt) => { flt.to_bits().hash(state); }
-            STRINGVAL(str) => { str.hash(state); }
-            BOOLEANVAL(bool) => { bool.hash(state); }
-            LAMBDAVAL(_lmb) => {}
-            OPTIONVAL(opt) => { opt.hash(state); }
-            ASSOCIATIONVAL { map, .. } => { map.hash(state); }
-            RETURNVAL(ret) => { ret.hash(state); }
-            ERRVAL => {}
-            NOTAVAL => {}
+impl ValueMap {
+    pub fn new() -> ValueMap {
+        ValueMap {
+            keys: vec![],
+            values: vec![],
+            default: None,
         }
     }
+
+    pub fn get(&self, val: &Value) -> Option<Value> {
+        for i in 0..self.keys.len() {
+            if self.keys.get(i).is_some_and(|k| k.deref() == val) { return Some(self.values.get(i).unwrap().deref().clone()); }
+        }
+        None
+    }
+
+    pub fn insert(&mut self, k: Value, v: Value) {
+        self.keys.push(Box::new(k));
+        self.values.push(Box::new(v));
+    }
 }
+
+impl Eq for Value {}
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
@@ -194,19 +206,20 @@ pub fn print_eol(env: &mut Environment, line: &usize) -> Value {
 impl Value {
     fn display_and_debug(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            LAZYVAL(_) => { f.write_str("\\") }
             INTEGERVAL(int) => { f.write_str(&*int.to_string()) }
             FLOATVAL(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
             STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL(_) => { f.write_str("lambda") }
-            ASSOCIATIONVAL { map, default } => {
-                let mut str = map.iter()
+            ASSOCIATIONVAL(map) => {
+                let mut str = map.keys.iter().zip(&map.values)
                     .map(|(k, v)| format!("{}: {}, ", k, v))
                     .reduce(|str1, str2| str1 + &*str2)
                     .unwrap_or(String::new());
                 str.pop();
                 str.pop();
-                if let Some(val) = default { str += &*format!(", _: {}", val); }
+                if let Some(val) = &map.default { str += &*format!(", _: {}", val); }
                 f.write_str(&*format!("[{}]", str))
             }
             NOTAVAL => { f.write_str("no input.") }

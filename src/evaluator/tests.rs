@@ -33,8 +33,6 @@ mod tests {
 
     fn str_val(str: &str) -> Value { STRINGVAL(str.parse().unwrap()) }
 
-    fn bool_val(b: bool) -> Value { BOOLEANVAL(b) }
-
     #[test]
     fn empty_eval() {
         let mut es = ErrorScribe::debug();
