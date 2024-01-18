@@ -69,7 +69,7 @@ fn eval_application(arg: &Box<Expression>,
         let arg = eval_expr(arg, env, es);
         let mut ret = NOTAVAL;
         if let ASSOCIATIONVAL(map) = arg {
-            for ((it, ti), idx) in map.keys.iter().zip(map.values).zip(0..) {
+            for ((it, ti), idx) in map.iter().zip(0..) {
                 env.write(&String::from("it"), &it, &Token::new(INTO, 0), es);
                 env.write(&String::from("ti"), &ti, &Token::new(INTO, 0), es);
                 env.write(&String::from("idx"), &INTEGERVAL(idx), &Token::new(INTO, 0), es);

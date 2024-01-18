@@ -1,5 +1,6 @@
 use std::cmp::{max, min, Ordering};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::collections::btree_map::Iter;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Neg};
 
@@ -110,30 +111,34 @@ pub enum Value {
 
 #[derive(Clone)]
 pub struct ValueMap {
-    pub(crate) keys: Vec<Box<Value>>,
-    pub(crate) values: Vec<Box<Value>>,
-    pub(crate) default: Option<Box<Value>>,
+    map: BTreeMap<Box<Value>, Box<Value>>,
+    pub default: Option<Box<Value>>,
 }
 
 impl ValueMap {
     pub fn new() -> ValueMap {
         ValueMap {
-            keys: vec![],
-            values: vec![],
+            map: Default::default(),
             default: None,
         }
     }
 
-    pub fn get(&self, val: &Value) -> Option<Value> {
-        for i in 0..self.keys.len() {
-            if self.keys.get(i).is_some_and(|k| k.deref() == val) { return Some(self.values.get(i).unwrap().deref().clone()); }
+    pub fn get(&self, key: &Value) -> Option<Value> {
+        if let Some(hit) = self.map.iter()
+            .filter(|(k, _)| (*k).deref() == key)
+            .map(|(_, v)| v)
+            .next() {
+            return Some(hit.deref().clone());
         }
         None
     }
 
     pub fn insert(&mut self, k: Value, v: Value) {
-        self.keys.push(Box::new(k));
-        self.values.push(Box::new(v));
+        self.map.insert(Box::new(k), Box::new(v));
+    }
+
+    pub fn iter(&self) -> Iter<'_, Box<Value>, Box<Value>> {
+        self.map.iter()
     }
 }
 
@@ -213,7 +218,7 @@ impl Value {
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL(_) => { f.write_str("lambda") }
             ASSOCIATIONVAL(map) => {
-                let mut str = map.keys.iter().zip(&map.values)
+                let mut str = map.map.iter()
                     .map(|(k, v)| format!("{}: {}, ", k, v))
                     .reduce(|str1, str2| str1 + &*str2)
                     .unwrap_or(String::new());
