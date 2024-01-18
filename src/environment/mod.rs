@@ -84,6 +84,8 @@ impl Scope {
                     MINUSASSIGN => { ov.minus_them(&varval) }
                     MULASSIGN => { varval.mul_them(ov) }
                     DIVASSIGN => { ov.div_them(&varval) }
+                    POWASSIGN => { ov.pow_them(&varval) }
+                    MODULOASSIGN => { ov.modulo_them(&varval) }
                     _ => { ERRVAL }
                 }
             }
@@ -348,6 +350,17 @@ impl Value {
             (_, _) => ERRVAL
         }
     }
+
+    pub fn pow_them(&self, other: &Value) -> Value {
+        match (self, other) {
+            (INTEGERVAL(i), INTEGERVAL(j)) => { if *i + *j == 0 { ERRVAL } else { INTEGERVAL(i.pow(*j as u32)) } }
+            (INTEGERVAL(i), FLOATVAL(J)) => { if *i as f64 + *J == 0.0 { ERRVAL } else { FLOATVAL((*i as f64).powf(*J)) } }
+            (FLOATVAL(I), INTEGERVAL(j)) => { if *I + *j as f64 == 0.0 { ERRVAL } else { FLOATVAL(I.powi(*j)) } }
+            (FLOATVAL(I), FLOATVAL(J)) => { if *I + *J == 0.0 { ERRVAL } else { FLOATVAL(I.powf(*J)) } }
+            (_, _) => ERRVAL
+        }
+    }
+
 
     pub fn modulo_them(&self, other: &Value) -> Value {
         match (self, other) {

@@ -1,0 +1,56 @@
+    1 // values themselves are expressions.
+    (2 + 3) * (4 + 5)  // both (2 + 3) and (4 + 5) are expressions. Of course, the entire line is also an expression.
+
+    rps = {
+        return "rock"
+        "paper"
+        "scissor"
+    }
+    phrase = {
+        "how"
+        "are"
+        "you"
+    }
+    "{phrase} {rps}" == "you rock"  // strings accept tokens between curly brackets by default.
+
+    x = 1  // variables cannot be declared without being initialized.
+    1 == (x = 1)  // an assigment expression returns the assigned value.
+    x => 2  // equivalent to x = max(x, 2)
+    x =< 1  // equivalent to x = min(x, 1)
+    // other assign operators: =*, =/, =%, =^
+
+        $"Hello, world!"
+        $x = 1 + 2 // an assignment is an expression that evaluates to the assigned value, so it can be printed.
+        y = 2 * $(3 + 4)  // you can also print a subexpression in the middle of a bigger expression.
+
+    $math = $(3 * 3) + $(4 * 4)
+    // clearly, the assignment is the last thing to be evaluated, so the last thing fed to STDIN will be 25.
+    // However there's no good reason to expect that this whole line will print "9 16 25" as opposed to "16 9 25".
+
+    $math = $<a>(3 * 3) + $<b>(4 * 4)  // prints "a: 9 b: 16 25"
+
+    $$ $3  // [test.lgr:4] 3
+
+        $int_to_name = [1: "one", 2: "three", _: "not saying"]
+        (int_to_name ##2) == "three"  // you can query an association with the operators ## and .
+        (int_to_name ##100) == "not saying" // the special _ key associates any unmapped "something" to the value mapped by _. It's always the last key.
+
+    !![3: $"now", 1: $"printing", 2: $"everything"]
+
+    add_one = it + 1
+
+        2 @ add_one == 3
+        add_two = add_one @ add_one  // note that an application whose left hand side is unapplied is, in turn, unapplied.
+        2 @ add_two == 4
+        2 @ add_one @ add_one == 4  // you can also chain applications directly.
+
+    assoc = [1: 2, 3: 4]
+    assoc @@ $"\tposition n°{idx} of association is the pair ({it}, {ti})\n"
+
+
+    countdown = [
+      it > 1: $(it - 1) @ countdown,
+      _: 0
+    ] ##true
+
+    5 @ countdown  // 4 3 2 1 0

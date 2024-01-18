@@ -35,12 +35,14 @@ pub enum TokenType {
     DIV,
     MUL,
     MODULO,
+    POW,
     AND,
     OR,
     XOR,
     // unary ops
     DOLLAR,
     BANG,
+    BANGBANG,
     // primitive types
     IDENTIFIER(String),
     STRING(String),
@@ -62,6 +64,8 @@ pub enum TokenType {
     DIVASSIGN,
     PLUSASSIGN,
     MINUSASSIGN,
+    MODULOASSIGN,
+    POWASSIGN,
     // others
     AT,
     ATAT,
@@ -267,7 +271,8 @@ impl<'a> Lexer<'_> {
                 '?' => QUESTIONMARK,
                 '_' => UNDERSCORE,
                 '%' => MODULO,
-                '#' => if self.consume_next_if_eq('#') {POUNDPOUND} else { POUND },
+                '^' => POW,
+                '#' => if self.consume_next_if_eq('#') { POUNDPOUND } else { POUND },
                 '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
@@ -277,13 +282,23 @@ impl<'a> Lexer<'_> {
                     continue;
                 } else if self.consume_next_if_eq('=') { DIVASSIGN } else { DIV },
                 '$' => if self.consume_next_if_eq('$') { EOLPRINT } else { DOLLAR }
-                '!' => if self.consume_next_if_eq('=') { UNEQ } else { BANG }
+                '!' => if self.consume_next_if_eq('=') {
+                    UNEQ
+                } else if self.consume_next_if_eq('!') {
+                    BANGBANG
+                } else {
+                    BANG
+                }
                 '=' => if self.consume_next_if_eq('=') {
                     EQ
                 } else if self.consume_next_if_eq('>') {
                     MAXASSIGN
                 } else if self.consume_next_if_eq('<') {
                     MINASSIGN
+                } else if self.consume_next_if_eq('%') {
+                    MODULOASSIGN
+                } else if self.consume_next_if_eq('^') {
+                    POWASSIGN
                 } else {
                     ASSIGN
                 },

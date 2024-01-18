@@ -32,12 +32,13 @@ pub enum AssociationState {
     MAP,
 }
 
-const ASSIGN_TOKENS: [TokenType; 7] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN];
+const ASSIGN_TOKENS: [TokenType; 9] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN, MODULOASSIGN, POWASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
-const MATH_HI_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
-const UNARY_TOKENS: [TokenType; 3] = [BANG, MINUS, DOLLAR];
+const MATH_MED_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
+const MATH_HI_PRIORITY_TOKENS: [TokenType; 1] = [POW];
+const UNARY_TOKENS: [TokenType; 4] = [BANG, BANGBANG, MINUS, DOLLAR];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
@@ -135,6 +136,20 @@ impl Parser<'_> {
     }
 
     fn factor(&mut self) -> Expression {
+        let mut expr = self.exponend();
+
+        while self.curr_in(&MATH_MED_PRIORITY_TOKENS) {
+            self.cursor.step_fwd();
+            expr = BINARY {
+                lhs: Box::new(expr),
+                op: self.read_prev().clone(),
+                rhs: Box::new(self.unary()),
+            };
+        }
+        expr
+    }
+
+    fn exponend(&mut self) -> Expression {
         let mut expr = self.unary();
 
         while self.curr_in(&MATH_HI_PRIORITY_TOKENS) {
@@ -152,8 +167,8 @@ impl Parser<'_> {
         if self.curr_in(&UNARY_TOKENS) {
             let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
             if self.curr_is_seq(&seq) {
-                let op = self.read_prev().clone();
-                self.cursor.step_fwd();
+                let op = self.read_curr().clone();
+                self.cursor.mov(2);
                 let value = self.read_curr().clone();
                 self.cursor.mov(2);
                 return BINARY { op, rhs: Box::new(LITERAL(value)), lhs: Box::new(self.unary()) };
@@ -271,10 +286,8 @@ impl Parser<'_> {
 
     fn curr_is_seq(&self, ttypes: &[TokenType]) -> bool {
         if self.tokens.is_empty() || ttypes.is_empty() { return false; }
-        if !self.can_peek(ttypes.len() - 1) { return false; }
-        if self.cursor.get() == 0 { return false; }
-        if !self.read_prev().type_equals(&ttypes[0]) { return false; }
-        ttypes[1..].iter()
+        if !self.can_peek(ttypes.len()) { return false; }
+        ttypes.iter()
             .zip(0..)
             .all(|(tt, i)| self.peek(i).type_equals(tt))
     }

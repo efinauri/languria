@@ -74,8 +74,10 @@ fn eval_application(arg: &Box<Expression>,
         let mut ret = NOTAVAL;
         if let ASSOCIATIONVAL(map) = arg {
             for ((it, ti), idx) in map.iter().zip(0..) {
+                let unlazy_ti;
+                if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, es); } else { unlazy_ti = ti.deref().clone() }
                 env.write_binding(&String::from("it"), &it);
-                env.write_binding(&String::from("ti"), &ti);
+                env.write_binding(&String::from("ti"), &unlazy_ti);
                 env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
                 ret = eval_expr(body, env, es);
             }
@@ -164,23 +166,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 }
             };
         }
-        Expression::ASSOCIATION(pairs) => {
-            let mut map = ValueMap::new();
-            // all code branching needs to be lazily evaluated, even the ones that aren't applicables
-            // (because of side effects)
-            for (k, v) in pairs {
-                if let Expression::LITERAL(tok) = k.deref() {
-                    if tok.type_equals(&UNDERSCORE) {
-                        map.default = Some(Box::new(LAZYVAL(v.clone())));
-                        continue;
-                    }
-                }
-                let k = eval_expr(k, env, scribe);
-                let v = LAZYVAL(v.clone());
-                map.insert(k, v);
-            }
-            ASSOCIATIONVAL(map)
-        }
+        Expression::ASSOCIATION(pairs) => { eval_association(pairs, true, env, scribe) }
         Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
         Expression::APPLICATION { arg, op, body } => {
             eval_application(arg, op.clone(), body, env, scribe)
@@ -217,6 +203,12 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         }
 
         Expression::UNARY { op, expr } => {
+            if op.ttype == BANGBANG {
+                if let Expression::ASSOCIATION(pairs) = expr.deref() {
+                    return eval_association(pairs, false, env, scribe);
+                }
+            }
+
             let val = eval_expr(expr, env, scribe);
             let ret = match op.ttype {
                 BANG => { val.bang_it() }
@@ -267,17 +259,18 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         }
         Expression::BINARY { lhs, op, rhs } => {
             let lval = eval_expr(lhs, env, scribe);
+            if op.ttype == DOLLAR {
+                lval.print_it(op.line, env, Some(rhs));
+                return lval;
+            }
             let rval = eval_expr(rhs, env, scribe);
 
             let ret = match op.ttype {
-                DOLLAR => {
-                    lval.print_it(op.line, env, Some(rhs));
-                    lval.clone()
-                }
                 MINUS => { lval.minus_them(&rval) }
                 PLUS => { lval.plus_them(&rval) }
                 MUL => { lval.mul_them(&rval) }
                 DIV => { lval.div_them(&rval) }
+                POW => { lval.pow_them(&rval) }
                 MODULO => { lval.modulo_them(&rval) }
                 GT => { lval.cmp_them(&rval, |a, b| a > b) }
                 GTE => { lval.cmp_them(&rval, |a, b| a >= b) }
@@ -297,6 +290,28 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             ret
         }
     }
+}
+
+fn eval_association(
+    pairs: &Vec<(Box<Expression>, Box<Expression>)>,
+    lazy: bool,
+    env: &mut Environment,
+    scribe: &mut ErrorScribe,
+) -> Value {
+    let mut map = ValueMap::new();
+    // all code branching needs to be lazily evaluated, even the ones that aren't applicables
+    // (because of side effects)
+    for (k, v) in pairs {
+        let v = if lazy { LAZYVAL(v.clone()) } else { eval_expr(v, env, scribe) };
+        if let Expression::LITERAL(tok) = k.deref() {
+            if tok.type_equals(&UNDERSCORE) {
+                map.default = Some(Box::new(v));
+                continue;
+            }
+        }
+        map.insert(eval_expr(k, env, scribe), v);
+    }
+    ASSOCIATIONVAL(map)
 }
 
 fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScribe) -> String {
