@@ -5,6 +5,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Neg};
 
 use crate::environment::Value::*;
+use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -32,11 +33,13 @@ impl Environment {
     pub fn destroy_scope(&mut self) { if self.scopes.len() > 1 { self.scopes.pop(); } }
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
 
-    pub fn read(&self, varname: &String) -> Option<&Value> {
+    pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
         for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.variables.get(varname) { return Some(val); }
+            if let Some(val) = scope.variables.get(varname) { return val; }
         }
-        None
+        scribe.annotate_error(Error::on_line(self.curr_line,
+                                             ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
+        &ERRVAL
     }
     pub fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let limit = self.scopes.len() - 1;
@@ -98,7 +101,7 @@ impl Scope {
 
 #[derive(Clone)]
 pub enum Value {
-    INTEGERVAL(i32),
+    INTEGERVAL(i64),
     FLOATVAL(f64),
     STRINGVAL(String),
     BOOLEANVAL(bool),
@@ -150,6 +153,8 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (INTEGERVAL(i), INTEGERVAL(j)) => i == j,
+            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
+                => { (*i as f64) == *j},
             (FLOATVAL(i), FLOATVAL(j)) => i == j,
             (STRINGVAL(i), STRINGVAL(j)) => i == j,
             (BOOLEANVAL(i), BOOLEANVAL(j)) => i == j,
@@ -169,6 +174,8 @@ impl PartialEq for Value {
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
+            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
+            => { j.partial_cmp(&(*i as f64)) }
             (INTEGERVAL(i), INTEGERVAL(j)) => Some(i.cmp(j)),
             (FLOATVAL(i), FLOATVAL(j)) => {
                 if i > j { return Some(Ordering::Greater); } else if i < j { return Some(Ordering::Less); }
@@ -355,7 +362,7 @@ impl Value {
         match (self, other) {
             (INTEGERVAL(i), INTEGERVAL(j)) => { if *i + *j == 0 { ERRVAL } else { INTEGERVAL(i.pow(*j as u32)) } }
             (INTEGERVAL(i), FLOATVAL(J)) => { if *i as f64 + *J == 0.0 { ERRVAL } else { FLOATVAL((*i as f64).powf(*J)) } }
-            (FLOATVAL(I), INTEGERVAL(j)) => { if *I + *j as f64 == 0.0 { ERRVAL } else { FLOATVAL(I.powi(*j)) } }
+            (FLOATVAL(I), INTEGERVAL(j)) => { if *I + *j as f64 == 0.0 { ERRVAL } else { FLOATVAL(I.powi(*j as i32)) } }
             (FLOATVAL(I), FLOATVAL(J)) => { if *I + *J == 0.0 { ERRVAL } else { FLOATVAL(I.powf(*J)) } }
             (_, _) => ERRVAL
         }

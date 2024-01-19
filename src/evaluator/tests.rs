@@ -11,7 +11,7 @@ mod tests {
     use crate::parser::Expression;
     use crate::parser::Expression::*;
 
-    fn int_expr(n: i32) -> Box<Expression> {
+    fn int_expr(n: i64) -> Box<Expression> {
         Box::new(
             LITERAL(
                 Token::debug(INTEGER(n))))
@@ -29,7 +29,7 @@ mod tests {
                 Token::debug(if b { TRUE } else { FALSE })))
     }
 
-    fn int_val(n: i32) -> Value { INTEGERVAL(n) }
+    fn int_val(n: i64) -> Value { INTEGERVAL(n) }
 
     fn str_val(str: &str) -> Value { STRINGVAL(str.parse().unwrap()) }
 

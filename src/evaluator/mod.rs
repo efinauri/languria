@@ -3,36 +3,38 @@ use std::ops::Deref;
 use crate::environment::{Environment, print_eol, Value, ValueMap};
 use crate::environment::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::errors::ErrorType::EVAL_UNASSIGNED_VAR;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
 mod tests;
 
-pub fn is_expr_applicable(expr: &Expression, env: &Environment) -> bool {
+pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut ErrorScribe) -> bool {
     match expr {
         Expression::VAR_RAW(varname)
-        => { env.read(varname).is_some_and(|val| val.type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR)))) }
+        => { env.read(varname, scribe).type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR))) }
 
         Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
+        Expression::APPLICABLE { .. } => { true }
+
         Expression::NOTANEXPR => { false }
         Expression::VAR_ASSIGN { .. } => { false }
+        Expression::ARGS(..) => { false }
 
         Expression::RETURN_EXPR(expr) |
         Expression::APPLICATION { arg: expr, .. } |
         Expression::UNARY { expr, .. } |
         Expression::GROUPING(expr)
-        => { is_expr_applicable(expr, env) }
+        => { is_expr_applicable(expr, env, scribe) }
 
         Expression::BINARY { rhs, lhs, .. } |
         Expression::LOGIC { rhs, lhs, .. } |
         Expression::QUERY { source: rhs, field: lhs, .. }
-        => { is_expr_applicable(rhs, env) || is_expr_applicable(lhs, env) }
+        => { is_expr_applicable(rhs, env, scribe) || is_expr_applicable(lhs, env, scribe) }
         Expression::BLOCK(exprs)
-        => { exprs.iter().any(|expr| is_expr_applicable(expr, env)) }
+        => { exprs.iter().any(|expr| is_expr_applicable(expr, env, scribe)) }
         Expression::ASSOCIATION(pairs)
-        => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env) || is_expr_applicable(v, env)) }
+        => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env, scribe) || is_expr_applicable(v, env, scribe)) }
     }
 }
 
@@ -58,40 +60,81 @@ pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, 
     result
 }
 
+fn eval_explicit_application(args: &Vec<Box<Expression>>, body: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
+    // must be applied to var raw (func name)
+    let varval = if let Expression::VAR_RAW(name) = body.deref() { env.read(name, scribe) } else {
+        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE));
+        return ERRVAL;
+    };
+    // // var must contain lambda
+    let lambda = if let LAMBDAVAL(ex) = varval { ex.deref().clone() } else {
+        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE));
+        return ERRVAL;
+    };
+    // lambda must be wrapping an applicable
+    let applicable = if let Expression::APPLICABLE {
+        arg, body
+    } = lambda { (arg, body) } else {
+        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_ITAPPLICABLE));
+        return ERRVAL;
+    };
+    // and the applicable must have params as the arg
+    let params = if let Expression::ARGS(params) = *applicable.0 { params } else {
+        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::GENERICERROR));
+        return ERRVAL;
+    };
+    // now we can write the params in and evaluate
+    for (arg, param) in args.iter().zip(params) {
+        if let Expression::VAR_RAW(name) = param.deref() {
+            let val = eval_expr(arg, env, scribe);
+
+            env.write(
+                &name,
+                &val,
+                &Token::new(ASSIGN, 0),
+            );
+        }
+    }
+    eval_expr(applicable.1.deref(), env, scribe)
+}
+
+
 fn eval_application(arg: &Box<Expression>,
                     op: Token,
                     body: &Box<Expression>,
                     env: &mut Environment,
-                    es: &mut ErrorScribe) -> Value {
+                    scribe: &mut ErrorScribe) -> Value {
     env.create_scope(true);
 
-    let ret = if op.type_equals(&AT) {
-        let it = eval_expr(arg, env, es);
+    let ret = if let Expression::ARGS(args) = arg.deref() {
+        eval_explicit_application(args, body, env, scribe)
+    } else if op.type_equals(&AT) {
+        let it = eval_expr(arg, env, scribe);
         env.write_binding(&String::from("it"), &it);
-        eval_expr(body, env, es)
+        eval_expr(body, env, scribe)
     } else {
-        let arg = eval_expr(arg, env, es);
+        let arg = eval_expr(arg, env, scribe);
         let mut ret = NOTAVAL;
         if let ASSOCIATIONVAL(map) = arg {
             for ((it, ti), idx) in map.iter().zip(0..) {
                 let unlazy_ti;
-                if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, es); } else { unlazy_ti = ti.deref().clone() }
+                if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, scribe); } else { unlazy_ti = ti.deref().clone() }
                 env.write_binding(&String::from("it"), &it);
                 env.write_binding(&String::from("ti"), &unlazy_ti);
                 env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-                ret = eval_expr(body, env, es);
+                ret = eval_expr(body, env, scribe);
             }
             ret
         } else if let STRINGVAL(str) = arg {
             for (it, idx) in str.chars().zip(0..) {
                 env.write_binding(&String::from("it"), &STRINGVAL(it.to_string()));
                 env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-                ret = eval_expr(body, env, es);
+                ret = eval_expr(body, env, scribe);
             }
             ret
         } else {
-            es.annotate_error(Error::on_line(env.curr_line,
-                                             ErrorType::EVAL_ITER_APPL_ON_NONITER(arg)));
+            scribe.annotate_error(Error::on_line(env.curr_line,
+                                                 ErrorType::EVAL_ITER_APPL_ON_NONITER(arg)));
             ERRVAL
         }
     };
@@ -126,13 +169,7 @@ fn resolve_query(
 fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     match expr {
         Expression::VAR_RAW(varname) => {
-            let read_val = env.read(varname);
-            if read_val.is_none() {
-                scribe.annotate_error(Error::on_line(env.curr_line,
-                                                     EVAL_UNASSIGNED_VAR(varname.clone())));
-                return ERRVAL;
-            }
-            let read_val = read_val.unwrap().clone();
+            let read_val = env.read(varname, scribe).clone();
             return match read_val {
                 LAMBDAVAL(ex) => { eval_expr(&ex, env, scribe) }
                 _ => { read_val.clone() }
@@ -141,10 +178,18 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         _ => {}
     }
 
-    if is_expr_applicable(expr, env) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
+    if is_expr_applicable(expr, env, scribe) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
 
     match expr {
-        Expression::VAR_RAW(_) => ERRVAL, // unreachable because it's handled above
+        // unreachable expressions (handled above or always part of a bigger expr)
+        Expression::VAR_RAW(_) | Expression::ARGS(_) => ERRVAL,
+        // reachable but erroneous expressions
+        Expression::APPLICABLE { .. } => {
+            scribe.annotate_error(Error::on_line(env.curr_line,
+            ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE));
+            ERRVAL
+        }
+
         Expression::QUERY { source, op, field } => {
             let field = eval_expr(field, env, scribe);
             let source = eval_expr(source, env, scribe);
@@ -192,9 +237,9 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                 STRING(str) => STRINGVAL(fill_in_string_tokens(str, env, scribe)),
                 INTEGER(int) => INTEGERVAL(*int),
                 FLOAT(flt) => FLOATVAL(*flt),
-                IT => { env.read(&"it".to_string()).unwrap().clone() }
-                TI => { env.read(&"ti".to_string()).unwrap().clone() }
-                IDX => { env.read(&"idx".to_string()).unwrap().clone() }
+                IT => { env.read(&"it".to_string(), scribe).clone() }
+                TI => { env.read(&"ti".to_string(), scribe).clone() }
+                IDX => { env.read(&"idx".to_string(), scribe).clone() }
                 _ => {
                     scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_INVALID_LITERAL));
                     ERRVAL
@@ -232,7 +277,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         Expression::LOGIC { lhs, op, rhs } => {
             let lval = eval_expr(lhs, env, scribe);
             if lval.as_bool_val().type_equals(&ERRVAL) {
-                scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::NOT_BOOLEANABLE(lval)));
+                scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_NOT_BOOLEANABLE(lval)));
                 return ERRVAL;
             }
             let ret = match (&op.ttype, lval.as_bool_val()) {
@@ -252,7 +297,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             };
             if ret.as_bool_val().type_equals(&ERRVAL) {
                 scribe.annotate_error(
-                    Error::on_line(env.curr_line, ErrorType::NOT_BOOLEANABLE(ret.clone())));
+                    Error::on_line(env.curr_line, ErrorType::EVAL_NOT_BOOLEANABLE(ret.clone())));
                 return ERRVAL;
             }
             ret
@@ -314,7 +359,7 @@ fn eval_association(
     ASSOCIATIONVAL(map)
 }
 
-fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScribe) -> String {
+fn fill_in_string_tokens(str: &String, env: &mut Environment, scribe: &mut ErrorScribe) -> String {
     let mut result = String::new();
     let mut varname = String::new();
     for ch in str.chars() {
@@ -322,13 +367,9 @@ fn fill_in_string_tokens(str: &String, env: &mut Environment, es: &mut ErrorScri
             '{' => { varname = "_".to_string(); }
             '}' => {
                 varname.remove(0);
-                if let Some(val) = env.read(&varname) {
-                    result += &*val.to_string();
-                    varname.clear();
-                } else {
-                    es.annotate_error(Error::on_line(env.curr_line, EVAL_UNASSIGNED_VAR(varname.clone())));
-                    break;
-                }
+                let val = env.read(&varname, scribe);
+                result += &*val.to_string();
+                varname.clear();
             }
             _ => {
                 if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }

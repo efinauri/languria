@@ -23,6 +23,8 @@ pub enum Expression {
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
     QUERY { source: Box<Expression>, op: Token, field: Box<Expression> },
+    ARGS(Vec<Box<Expression>>),
+    APPLICABLE { arg: Box<Expression>, body: Box<Expression> },
     NOTANEXPR,
 }
 
@@ -32,6 +34,7 @@ pub enum AssociationState {
     MAP,
 }
 
+const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
 const ASSIGN_TOKENS: [TokenType; 9] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN, MODULOASSIGN, POWASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
@@ -73,7 +76,7 @@ impl Parser<'_> {
         if self.curr_in(&[POUND, POUNDPOUND]) {
             self.cursor.step_fwd();
             QUERY { source: Box::new(expr), op: self.read_prev().clone(), field: Box::new(self.build_expression()) }
-        } else if self.curr_in(&[AT, ATAT]) {
+        } else if self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
             APPLICATION { arg: Box::new(expr), op: self.read_prev().clone(), body: Box::new(self.build_expression()) }
         } else { expr }
@@ -195,6 +198,46 @@ impl Parser<'_> {
                 self.cursor.step_fwd();
                 RETURN_EXPR(Box::new(self.build_expression()))
             }
+            BAR => {
+                self.cursor.step_fwd();
+                let mut exprs = vec![];
+                let mut all_vars = true;
+                while !self.curr_in(&[BAR]) {
+                    let expr = self.build_expression();
+                    if let VAR_RAW(_) = expr {} else { all_vars = false; }
+                    exprs.push(Box::new(expr));
+                    if self.curr_in(&[COMMA]) {
+                        self.cursor.step_fwd();
+                    }
+                }
+                self.assert_curr_is(BAR);
+                let arg = Box::new(ARGS(exprs));
+                self.cursor.step_fwd();
+                match (all_vars, self.curr_in(&APPLICATION_TOKENS)) {
+                    (_, true) => {
+                        let op = self.read_curr().clone();
+                        self.cursor.step_fwd();
+                        let varname = if let IDENTIFIER(str) = &self.read_curr().ttype {
+                            str
+                        } else {
+                            self.scribe.annotate_error(Error::on_line(self.read_curr().line,
+                                                                      ErrorType::PARSER_NOTAVAR));
+                            return NOTANEXPR;
+                        }.clone();
+                        self.cursor.step_fwd();
+                        APPLICATION { arg, op, body: Box::new(VAR_RAW(varname)) }
+                    }
+                    (true, false) => {
+                        APPLICABLE { arg, body: Box::new(self.build_expression()) }
+                    }
+                    (false, false) => {
+                        self.scribe.annotate_error(
+                            Error::on_line(self.read_curr().line,
+                                           ErrorType::PARSER_NOTAVAR));
+                        NOTANEXPR
+                    }
+                }
+            },
             IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT | UNDERSCORE => {
                 self.cursor.step_fwd();
                 LITERAL(self.read_prev().clone())

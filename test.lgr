@@ -1,0 +1,5 @@
+    {
+      greeting = "Hello"
+      object = "world"
+    "{greeting}, {object}!"
+    }

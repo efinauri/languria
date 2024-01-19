@@ -60,6 +60,9 @@ pub enum ErrorType {
     PARSER_EXPECTED_LITERAL(TokenType),
     PARSER_EXPECTED_TOKEN(TokenType),
     PARSER_UNEXPECTED_TOKEN(TokenType),
+    PARSER_NOTAVAR,
+
+    GENERICERROR,
 
     EVAL_UNASSIGNED_VAR(String),
     EVAL_ITER_APPL_ON_NONITER(Value),
@@ -68,7 +71,10 @@ pub enum ErrorType {
     EVAL_INVALID_EXPR,
     EVAL_INVALID_LITERAL,
     EVAL_INVALID_OP(TokenType, Vec<Value>),
-    NOT_BOOLEANABLE(Value),
+    EVAL_NOT_BOOLEANABLE(Value),
+    EVAL_ARGS_TO_NOT_APPLICABLE,
+    EVAL_ARGS_TO_ITAPPLICABLE,
+    EVAL_VAL_TO_NONIT_APPLICABLE,
 }
 
 #[derive(Debug)]
@@ -101,6 +107,7 @@ impl Display for Error {
             ErrorType::PARSER_EXPECTED_LITERAL(found) => format!("expected literal, found: {:?}", found),
             ErrorType::PARSER_EXPECTED_TOKEN(ttype) => format!("expected this token: {:?}", ttype),
             ErrorType::PARSER_UNEXPECTED_TOKEN(ttype) => format!("unexpected token: {:?}", ttype),
+            ErrorType::PARSER_NOTAVAR => "when declaring an applicable, only literals are allowed in the list of arguments".to_string(),
             ErrorType::EVAL_UNASSIGNED_VAR(varname) => format!("uninitialized variable: {}", varname),
             ErrorType::EVAL_ITER_APPL_ON_NONITER(val) => format!("cannot use @@ to feed `{}`", val),
             ErrorType::EVAL_UNQUERIABLE(val) => format!("`{}` cannot be queried", val),
@@ -109,7 +116,13 @@ impl Display for Error {
             ErrorType::EVAL_INVALID_LITERAL => "invalid literal".to_string(),
             ErrorType::EVAL_INVALID_OP(ttype, operands) =>
                 format!("cannot apply `{:?}` to operands `{:?}`", ttype, operands),
-            ErrorType::NOT_BOOLEANABLE(val) => format!("cannot treat `{}` as a boolean value", val)
+            ErrorType::EVAL_NOT_BOOLEANABLE(val) => format!("cannot treat `{}` as a boolean value", val),
+            ErrorType::EVAL_ARGS_TO_ITAPPLICABLE => "the value fed to an it-applicable cannot be caged between '|'".to_string(),
+            ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE => "the right side of the application is not an applicable".to_string(),
+            ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE => "the value fed to an explicit applicable must be caged between '|'".to_string(),
+
+
+            ErrorType::GENERICERROR => "generic error".to_string()
         };
         f.write_str(&*(self.err_location() + &*msg).red())
     }

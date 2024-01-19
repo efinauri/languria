@@ -46,7 +46,7 @@ pub enum TokenType {
     // primitive types
     IDENTIFIER(String),
     STRING(String),
-    INTEGER(i32),
+    INTEGER(i64),
     FLOAT(f64),
     // primitive literals and values
     IT,
@@ -69,6 +69,7 @@ pub enum TokenType {
     // others
     AT,
     ATAT,
+    BAR,
     // associations
     POUND,
     POUNDPOUND,
@@ -188,7 +189,7 @@ impl<'a> Lexer<'_> {
                 _ => { break; }
             }
         }
-        if is_float { FLOAT(f64::from_str(str.as_str()).unwrap()) } else { INTEGER(i32::from_str(str.as_str()).unwrap()) }
+        if is_float { FLOAT(f64::from_str(str.as_str()).unwrap()) } else { INTEGER(i64::from_str(str.as_str()).unwrap()) }
     }
 
     fn skip_comment(&mut self) {
@@ -272,6 +273,7 @@ impl<'a> Lexer<'_> {
                 '_' => UNDERSCORE,
                 '%' => MODULO,
                 '^' => POW,
+                '|' => BAR,
                 '#' => if self.consume_next_if_eq('#') { POUNDPOUND } else { POUND },
                 '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },

@@ -13,7 +13,7 @@ use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
 use crate::evaluator::evaluate_expressions;
 
 pub fn interpret_file(filename: &str, verbose: bool) {
-    let mut path = Path::new(filename);
+    let path = Path::new(filename);
     let mut file;
     if let Ok(f) = File::open(filename) {
         file = f;
