@@ -79,18 +79,18 @@ pub fn serve_repl() {
     }
 }
 
-fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut Environment, verbose: bool) {
-    let mut lexer = lexer::Lexer::from_string(instructions, es);
+pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, env: &mut Environment, verbose: bool) {
+    let mut lexer = lexer::Lexer::from_string(instructions, scribe);
     let tokens = lexer.produce_tokens();
     if verbose {
         println!("produced following tokens: ");
         tokens.iter().for_each(|tok| println!("{}", tok));
     }
-    let mut parser = parser::Parser::from_tokens(tokens.to_owned(), es);
+    let mut parser = parser::Parser::from_tokens(tokens.to_owned(), scribe);
     parser.parse();
     let exprs = parser.into_expressions();
-    if es.has_errors() || exprs.is_empty() {
-        es.clear_errors();
+    if scribe.has_errors() || exprs.is_empty() {
+        scribe.clear_errors();
         return;
     }
     if verbose {
@@ -100,7 +100,7 @@ fn interpret_instructions(es: &mut ErrorScribe, instructions: String, env: &mut 
         }
     }
     let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();
-    let value = evaluate_expressions(&input_exprs, es, env, false);
+    let value = evaluate_expressions(&input_exprs, scribe, env, false);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {
