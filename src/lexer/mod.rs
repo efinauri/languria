@@ -71,16 +71,18 @@ pub enum TokenType {
     ATAT,
     BAR,
     // associations
-    POUND,
-    POUNDPOUND,
+    PULL,
+    PUSH,
     COLON,
     COMMA,
-    DOT,
     UNDERSCORE,
+    // options
     QUESTIONMARK,
     //
     NOTATOKEN,
     EOF,
+    //tbdeleted
+    DOT,
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -274,7 +276,6 @@ impl<'a> Lexer<'_> {
                 '%' => MODULO,
                 '^' => POW,
                 '|' => BAR,
-                '#' => if self.consume_next_if_eq('#') { POUNDPOUND } else { POUND },
                 '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
@@ -288,9 +289,7 @@ impl<'a> Lexer<'_> {
                     UNEQ
                 } else if self.consume_next_if_eq('!') {
                     BANGBANG
-                } else {
-                    BANG
-                }
+                } else { BANG }
                 '=' => if self.consume_next_if_eq('=') {
                     EQ
                 } else if self.consume_next_if_eq('>') {
@@ -301,11 +300,17 @@ impl<'a> Lexer<'_> {
                     MODULOASSIGN
                 } else if self.consume_next_if_eq('^') {
                     POWASSIGN
-                } else {
-                    ASSIGN
-                },
-                '<' => if self.consume_next_if_eq('=') { LTE } else { LT }
-                '>' => if self.consume_next_if_eq('=') { GTE } else { GT }
+                } else { ASSIGN }
+                '<' => if self.consume_next_if_eq('=') {
+                    LTE
+                } else if self.consume_next_if_eq('<') {
+                    PUSH
+                } else { LT }
+                '>' => if self.consume_next_if_eq('=') {
+                    GTE
+                } else if self.consume_next_if_eq('>') {
+                    PULL
+                } else { GT }
                 '\'' | '"' => { self.consume_str(symbol) }
                 '0'..='9' => { self.consume_num(symbol) }
                 'a'..='z' | 'A'..='Z' => { self.consume_alphabet(symbol) }

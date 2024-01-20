@@ -6,6 +6,7 @@ use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
+use crate::parser::Expression::UNDERSCORE_EXPR;
 
 mod tests;
 
@@ -17,10 +18,12 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
         Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
         Expression::APPLICABLE { .. } => { true }
 
-        Expression::NOTANEXPR => { false }
-        Expression::VAR_ASSIGN { .. } => { false }
-        Expression::ARGS(..) => { false }
+        Expression::VALUE_WRAPPER(_) |
+        Expression::NOTANEXPR |
+        Expression::VAR_ASSIGN { .. } |
+        UNDERSCORE_EXPR => { false }
 
+        Expression::OPTION_EXPR(expr) |
         Expression::RETURN_EXPR(expr) |
         Expression::APPLICATION { arg: expr, .. } |
         Expression::UNARY { expr, .. } |
@@ -29,12 +32,17 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
 
         Expression::BINARY { rhs, lhs, .. } |
         Expression::LOGIC { rhs, lhs, .. } |
-        Expression::QUERY { source: rhs, field: lhs, .. }
+        Expression::PULL_EXPR { source: rhs, key: lhs, .. }
         => { is_expr_applicable(rhs, env, scribe) || is_expr_applicable(lhs, env, scribe) }
+
+        Expression::ARGS(exprs) |
         Expression::BLOCK(exprs)
         => { exprs.iter().any(|expr| is_expr_applicable(expr, env, scribe)) }
         Expression::ASSOCIATION(pairs)
         => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env, scribe) || is_expr_applicable(v, env, scribe)) }
+
+        Expression::PUSH_EXPR { obj, args }
+        => { is_expr_applicable(obj, env, scribe) || is_expr_applicable(args, env, scribe) }
     }
 }
 
@@ -143,25 +151,14 @@ fn eval_application(arg: &Box<Expression>,
 }
 
 fn resolve_query(
-    expression: Option<Box<Expression>>,
-    value: Option<Value>,
-    env: &mut Environment,
-    scribe: &mut ErrorScribe,
-    op: &Token,
+    expression: Option<Box<Expression>>, value: Option<Value>, env: &mut Environment, scribe: &mut ErrorScribe,
 ) -> Value {
     // if something was successfully queried, it is first evaluated (if it's not a proper value yet) and then returned.
-    // keynotfound is thrown otherwise.
-    match (&op.ttype, expression, value) {
-        (POUND, Some(ex), None) => { OPTIONVAL(Some(Box::new(eval_expr(&ex, env, scribe)))) }
-        (POUND, None, Some(val)) => { OPTIONVAL(Some(Box::new(val.clone()))) }
-        (POUND, None, None) => { OPTIONVAL(None) }
-        (POUNDPOUND, Some(ex), None) => { eval_expr(&ex, env, scribe) }
-        (POUNDPOUND, None, Some(val)) => { val.clone() }
-        (_, _, _) => {
-            scribe.annotate_error(Error::on_line(env.curr_line,
-                                                 ErrorType::EVAL_KEY_NOT_FOUND));
-            ERRVAL
-        }
+    match (expression, value) {
+        (Some(ex), None) => { OPTIONVAL(Some(Box::new(eval_expr(&ex, env, scribe)))) }
+        (None, Some(val)) => { OPTIONVAL(Some(Box::new(val.clone()))) }
+        (None, None) => { OPTIONVAL(None) }
+        (_, _) => { unreachable!() }
     }
 }
 
@@ -181,16 +178,69 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
     if is_expr_applicable(expr, env, scribe) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
 
     match expr {
+        Expression::VALUE_WRAPPER(val) => val.deref().clone(),
+
         // unreachable expressions (handled above or always part of a bigger expr)
-        Expression::VAR_RAW(_) | Expression::ARGS(_) => ERRVAL,
+        Expression::VAR_RAW(_) | Expression::ARGS(_) | UNDERSCORE_EXPR => ERRVAL,
         // reachable but erroneous expressions
         Expression::APPLICABLE { .. } => {
             scribe.annotate_error(Error::on_line(env.curr_line,
-            ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE));
+                                                 ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE));
             ERRVAL
         }
 
-        Expression::QUERY { source, op, field } => {
+        Expression::OPTION_EXPR(ex) => {
+            if ex.type_equals(&UNDERSCORE_EXPR) { OPTIONVAL(None) } else {
+                OPTIONVAL(Some(Box::new(eval_expr(ex, env, scribe))))
+            }
+        }
+        Expression::PUSH_EXPR { obj, args } => {
+            // desugaring var << |k, v| into
+            // var = var << |k, v|
+            if let Expression::VAR_RAW(varname) = obj.deref() {
+                return eval_expr(
+                    &Expression::VAR_ASSIGN {
+                        varname: varname.clone(),
+                        op: Token::new(ASSIGN, env.curr_line),
+                        varval: Box::new(Expression::PUSH_EXPR {
+                            obj: Box::new(Expression::VALUE_WRAPPER(Box::new((*env.read(varname, scribe)).clone()))),
+                            args: args.clone(),
+                        }),
+                    }, env, scribe,
+                );
+            }
+
+            let mut obj = eval_expr(obj, env, scribe);
+            let else_branch = vec![];
+            let exprs = if let Expression::ARGS(exprs) = args.deref() { exprs } else { &else_branch };
+            if exprs.len() != 2 {
+                scribe.annotate_error(Error::on_line(env.curr_line,
+                                                     ErrorType::EVAL_INVALID_PUSH));
+                return ERRVAL;
+            }
+            return match obj {
+                ASSOCIATIONVAL(ref mut map) => {
+                    match (exprs.get(0).unwrap().deref(), exprs.get(1).unwrap().deref()) {
+                        (UNDERSCORE_EXPR, UNDERSCORE_EXPR) => { map.default = None; }
+                        (UNDERSCORE_EXPR, val) => { map.default = Some(Box::new(eval_expr(val, env, scribe))); }
+                        (key, UNDERSCORE_EXPR) => { map.remove(eval_expr(key, env, scribe)); }
+                        (key, val) => {
+                            map.insert(
+                                eval_expr(key, env, scribe),
+                                eval_expr(val, env, scribe),
+                            );
+                        }
+                    };
+                    obj
+                }
+                _ => {
+                    scribe.annotate_error(Error::on_line(env.curr_line,
+                                                         ErrorType::EVAL_INVALID_OP(PUSH, vec![obj])));
+                    return ERRVAL;
+                }
+            };
+        }
+        Expression::PULL_EXPR { source, key: field } => {
             let field = eval_expr(field, env, scribe);
             let source = eval_expr(source, env, scribe);
             return match source {
@@ -202,11 +252,11 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                     } else if let Some(val) = map.default {
                         if let LAZYVAL(ex) = val.deref() { query_expr = Some(ex.clone()); } else { query_val = Some(*val); };
                     }
-                    return resolve_query(query_expr, query_val, env, scribe, op);
+                    return resolve_query(query_expr, query_val, env, scribe);
                 }
                 _ => {
                     scribe.annotate_error(Error::on_line(env.curr_line,
-                                                         ErrorType::EVAL_UNQUERIABLE(source)));
+                                                         ErrorType::EVAL_INVALID_OP(PULL, vec![source])));
                     ERRVAL
                 }
             };
@@ -348,11 +398,9 @@ fn eval_association(
     // (because of side effects)
     for (k, v) in pairs {
         let v = if lazy { LAZYVAL(v.clone()) } else { eval_expr(v, env, scribe) };
-        if let Expression::LITERAL(tok) = k.deref() {
-            if tok.type_equals(&UNDERSCORE) {
-                map.default = Some(Box::new(v));
-                continue;
-            }
+        if k.type_equals(&UNDERSCORE_EXPR) {
+            map.default = Some(Box::new(v));
+            continue;
         }
         map.insert(eval_expr(k, env, scribe), v);
     }

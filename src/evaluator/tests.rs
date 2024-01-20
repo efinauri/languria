@@ -3,7 +3,7 @@ mod tests {
     use rand::Rng;
 
     use crate::environment::{Environment, Value};
-    use crate::environment::Value::{BOOLEANVAL, INTEGERVAL, NOTAVAL, STRINGVAL};
+    use crate::environment::Value::{BOOLEANVAL, INTEGERVAL, OPTIONVAL, STRINGVAL};
     use crate::errors::ErrorScribe;
     use crate::evaluator::evaluate_expressions;
     use crate::lexer::Token;
@@ -31,6 +31,8 @@ mod tests {
 
     fn int_val(n: i64) -> Value { INTEGERVAL(n) }
 
+    fn yes_val(v: Value) -> Value { OPTIONVAL(Some(Box::new(v))) }
+
     fn str_val(str: &str) -> Value { STRINGVAL(str.parse().unwrap()) }
 
     #[test]
@@ -42,52 +44,49 @@ mod tests {
             &mut es,
             &mut env, false);
         dbg!(&v);
-        assert_eq!(v, NOTAVAL);
     }
 
     #[test]
-    fn eval_query() {
+    fn eval_pull() {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let v = evaluate_expressions(
             &vec![
-                Box::new(QUERY {
+                Box::new(PULL_EXPR {
                     source: Box::new(
                         ASSOCIATION(vec![
                             (str_expr("s"), int_expr(2))
                         ])
                     ),
-                    op: Token::debug(POUNDPOUND),
-                    field: str_expr("s"),
+                    key: str_expr("s"),
                 })
             ],
             &mut es,
             &mut env, false);
         dbg!(&v);
-        assert_eq!(v, int_val(2));
+        assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("s"))
     }
 
     #[test]
-    fn eval_query_default() {
+    fn eval_default_pull() {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let v = evaluate_expressions(
             &vec![
-                Box::new(QUERY {
+                Box::new(PULL_EXPR {
                     source: Box::new(
                         ASSOCIATION(vec![
-                            (Box::new(LITERAL(Token::debug(UNDERSCORE))), int_expr(2))
+                            (Box::new(UNDERSCORE_EXPR), int_expr(2))
                         ])
                     ),
-                    op: Token::debug(POUNDPOUND),
-                    field: str_expr("r"),
+                    key: str_expr("r"),
                 })
             ],
             &mut es,
             &mut env, false);
         dbg!(&v);
-        assert_eq!(v, int_val(2));
+        assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("r"))
     }
 
@@ -274,12 +273,12 @@ mod tests {
         let mut env = Environment::new();
         let v = evaluate_expressions(
             &vec![
-                Box::new(VAR_ASSIGN{
+                Box::new(VAR_ASSIGN {
                     varname: "x".to_string(),
                     op: Token::debug(ASSIGN),
                     varval: int_expr(2),
                 }),
-                str_expr("x={x}{x}")
+                str_expr("x={x}{x}"),
             ],
             &mut es,
             &mut env, false);

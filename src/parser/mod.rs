@@ -1,4 +1,5 @@
 use std::vec;
+use crate::environment::Value;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
@@ -22,10 +23,44 @@ pub enum Expression {
     APPLICATION { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
-    QUERY { source: Box<Expression>, op: Token, field: Box<Expression> },
+    PULL_EXPR { source: Box<Expression>, key: Box<Expression> },
+    PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
     APPLICABLE { arg: Box<Expression>, body: Box<Expression> },
+    OPTION_EXPR(Box<Expression>),
+    UNDERSCORE_EXPR,
+
     NOTANEXPR,
+    VALUE_WRAPPER(Box<Value>),
+}
+
+impl Expression {
+    pub fn type_equals(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RETURN_EXPR(expr), other) => {
+                expr.type_equals(other)
+            }
+            (BLOCK(exprs), _) => {
+                match exprs.last() {
+                    None => { false }
+                    Some(e) => { e.type_equals(other) }
+                }
+            }
+            (LITERAL(_), LITERAL(_)) |
+            (UNARY { ..}, UNARY { .. }) |
+            (BINARY {.. }, BINARY {.. }) |
+            (LOGIC {.. }, LOGIC { .. }) |
+            (GROUPING(_), GROUPING(_)) |
+            (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
+            (VAR_RAW(_), VAR_RAW(_)) |
+            (APPLICATION { .. }, APPLICATION { .. }) |
+            (ASSOCIATION(_), ASSOCIATION(_)) |
+            (PULL_EXPR { .. }, PULL_EXPR { .. }) |
+            (UNDERSCORE_EXPR, UNDERSCORE_EXPR) |
+            (NOTANEXPR, NOTANEXPR) => true,
+            (_, _) => false
+        }
+    }
 }
 
 pub enum AssociationState {
@@ -72,14 +107,54 @@ impl Parser<'_> {
     }
 
     fn build_expression(&mut self) -> Expression {
-        let expr = self.logic();
-        if self.curr_in(&[POUND, POUNDPOUND]) {
+        if !self.can_consume() {
+            self.scribe.annotate_error(Error::on_line(
+                if self.tokens.is_empty() { 0 } else { self.read_prev().line },
+                ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
+            return NOTANEXPR;
+        }
+        self.assign()
+    }
+
+    fn assign(&mut self) -> Expression {
+        let mut expr = self.pull();
+        while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
-            QUERY { source: Box::new(expr), op: self.read_prev().clone(), field: Box::new(self.build_expression()) }
-        } else if self.curr_in(&APPLICATION_TOKENS) {
+            expr = APPLICATION {
+                arg: Box::new(expr),
+                op: self.read_prev().clone(),
+                body: Box::new(self.build_expression())
+            }
+        }
+        expr
+
+    }
+
+
+    fn pull(&mut self) -> Expression {
+        let mut expr = self.push();
+        while self.curr_in(&[PULL]) {
             self.cursor.step_fwd();
-            APPLICATION { arg: Box::new(expr), op: self.read_prev().clone(), body: Box::new(self.build_expression()) }
-        } else { expr }
+            expr = PULL_EXPR {
+                source: Box::new(expr),
+                key: Box::new(self.build_expression())
+            }
+        }
+        expr
+    }
+
+    fn push(&mut self) -> Expression {
+        let mut expr = self.logic();
+
+        while self.curr_in(&[PUSH]) {
+            self.cursor.step_fwd();
+            self.assert_curr_is(BAR);
+            expr = PUSH_EXPR {
+                obj: Box::new(expr),
+                args: Box::new(self.primary()),
+            }
+        }
+        expr
     }
 
     fn logic(&mut self) -> Expression {
@@ -185,12 +260,16 @@ impl Parser<'_> {
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
-                if self.tokens.is_empty() { 0 } else { self.read_curr().line },
+                if self.tokens.is_empty() { 0 } else { self.read_prev().line },
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
         let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
         return match ttype {
+            QUESTIONMARK => {
+                self.cursor.step_fwd();
+                OPTION_EXPR(Box::new(self.build_expression()))
+            }
             LBRACKET => { self.process_association(AssociationState::MAP) }
             IDENTIFIER(str) => { self.process_assignment(str) }
             LBRACE => { self.process_code_block() }
@@ -204,6 +283,7 @@ impl Parser<'_> {
                 let mut all_vars = true;
                 while !self.curr_in(&[BAR]) {
                     let expr = self.build_expression();
+                    if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
                     if let VAR_RAW(_) = expr {} else { all_vars = false; }
                     exprs.push(Box::new(expr));
                     if self.curr_in(&[COMMA]) {
@@ -211,7 +291,7 @@ impl Parser<'_> {
                     }
                 }
                 self.assert_curr_is(BAR);
-                let arg = Box::new(ARGS(exprs));
+                let arg = ARGS(exprs);
                 self.cursor.step_fwd();
                 match (all_vars, self.curr_in(&APPLICATION_TOKENS)) {
                     (_, true) => {
@@ -225,26 +305,25 @@ impl Parser<'_> {
                             return NOTANEXPR;
                         }.clone();
                         self.cursor.step_fwd();
-                        APPLICATION { arg, op, body: Box::new(VAR_RAW(varname)) }
+                        APPLICATION { arg: Box::new(arg), op, body: Box::new(VAR_RAW(varname)) }
                     }
                     (true, false) => {
-                        APPLICABLE { arg, body: Box::new(self.build_expression()) }
+                        APPLICABLE { arg: Box::new(arg), body: Box::new(self.build_expression()) }
                     }
                     (false, false) => {
-                        self.scribe.annotate_error(
-                            Error::on_line(self.read_curr().line,
-                                           ErrorType::PARSER_NOTAVAR));
-                        NOTANEXPR
+                        arg
                     }
                 }
-            },
-            IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT | UNDERSCORE => {
+            }
+            UNDERSCORE => { self.cursor.step_fwd(); UNDERSCORE_EXPR },
+            IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL(self.read_prev().clone())
             }
             LPAREN => {
                 self.cursor.step_fwd();
                 let expr = self.build_expression();
+                if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
                 self.assert_curr_is(RPAREN);
                 self.cursor.step_fwd();
                 GROUPING(Box::new(expr))
@@ -283,6 +362,7 @@ impl Parser<'_> {
         let mut exprs = vec![];
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
             let expr = self.build_expression();
+            if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
             self.exprs.push(expr.clone());
             exprs.push(Box::new(expr));
         }
@@ -305,13 +385,7 @@ impl Parser<'_> {
                     op: self.read_prev().clone(),
                     varval: Box::new(self.build_expression()),
                 }
-            } else { // should be unreachable since this fn is only called when the if let is satisfied.
-                self.scribe.annotate_error(Error::on_line(self.read_curr().line,
-                                                          ErrorType::PARSER_UNEXPECTED_TOKEN(
-                                                              self.read_curr().ttype.clone()
-                                                          )));
-                NOTANEXPR
-            };
+            } else { unreachable!() };
         }
         VAR_RAW(str.clone())
     }

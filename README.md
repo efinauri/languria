@@ -10,7 +10,7 @@ __TABLE OF CONTENTS__
     * [INTEGERS AND FLOATS](#integers-and-floats)
     * [ASSOCIATIONS](#associations)
     * [APPLICABLES](#applicables)
-    * [OPTIONALS](#optionals)
+    * [OPTIONS](#options)
 <!-- TOC -->
 
 # ABOUT
@@ -36,7 +36,7 @@ This is an overview of the primitive types:
 | Boolean     | `true`       | [link](#BOOLEANS)            |
 | String      | `example`    | [link](#STRINGS)             |
 | Association | `[1: "one"]` | [link](#ASSOCIATIONS)        |
-| Optional    | `<0.8>`      | [link](#OPTIONALS)           |
+| Option      | `<0.8>`      | [link](OPTIONS)              |
 | Applicable  | `it * 2`     | [link](#APPLICABLES)         |
 | Literal     | `x`          | -                            |
 
@@ -116,24 +116,51 @@ The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both op
 8 ^ 4  // 4096
 8 ^ (1.0/3)  // 2.0
 ```
+
+### OPTIONS
+
+An option value is a container in which there could either be another value, or nothing.
+
+```
+yes_int = ?2
+no = ?_ // the empty option
+```
+
 ### ASSOCIATIONS
 
 An association is a mapping from certain values of a type (keys) to certain values of another type (values). The keys are ordered and cannot repeat.
-You can query (ask for the value corresponding to a key) an association using the operators `#` or `##`.
-The first wraps the result into an option, while the second gives you back the key itself. If the key can't be found, you get an empty wrapping in the first case and an error in the second.
+
+You can pull a value from an association using the operator `>>` on its key. The result of this operation is always an option, with the value you were looking for inside it if the pull was successful.
 ```
 $int_to_name = [1: "one", 2: "three", _: "not saying"]
-(int_to_name ##2) == "three"  // you can query an association with the operators ## and .
-(int_to_name ##100) == "not saying" // the special _ key associates any unmapped "something" to the value mapped by _. It's always the last key.
+(int_to_name >>2) == ?"three"  // you can query an association with the operators ## and .
+(int_to_name >>100) == ?"not saying" // the special _ key associates any unmapped "something" to the value mapped by _. It's always the last key.
+
+no_default = [1: 2]
+(no_default >>100) == ?_
 ```
 If you're following along and trying the commands out, you probably noticed something strange the first line of the above example:
 its REPL output was `[1: (not yet evaluated), 2: (not yet evaluated), _: (not yet evaluated)]`.
+
 This happens because, by default, values in associations are lazily evaluated, in order to prevent side effects and use them for control flow.
 In the case above, being queried by `2` caused the key `"three"` to evaluate to that string.
+
 When needed, you can prepend `!!` to an association to evaluate its values right away.
 ```
 !![3: $"now", 1: $"printing", 2: $"everything"]
 ```
+
+To push a key/value pair into an association, the `<<` operator is used.
+
+```
+new_association = [] << |1, 3|  // [1: 3]
+new_association << |1, 4|  // [1: 4]  // if the key already exists, its value is overridden.
+new_association << |_, 5|  // [1; 4, _: 5]  // you can also set a default value like such.
+new_association << |1, _|  // [_: 5]  // pushing an underscore signifies that we want to drop that key.
+new_association << |_, _|  // []  // by the same token, you can also drop the association's default value in this way.
+```
+
+
 ### APPLICABLES
 
 An applicable is an expression that holds onto a piece of code with some placeholders, and that undergoes an additional evaluation phase, called application, if fed values through the operators `@` or `@@`.
@@ -161,9 +188,9 @@ When you store an unapplied expression into a variable, you can use that variabl
 countdown = [
   it > 1: $(it - 1) @ countdown,
   _: 0
-] ##true
+] >> true
 
-5 @ countdown  // 4 3 2 1 0
+5 @ countdown  // prints 4 3 2 1 and a very nested option of 0!
 ```
 If you wish to define an applicable that accepts more than one value, you can use a more traditional syntax and specify its arguments like such:
 ```
@@ -171,7 +198,3 @@ add = |a, b| a + b
 |3, 2| @ add == 5 
 ```
 Note that in this case you don't have access to the default placeholders, and you need to stick to the calling syntax `|arguments| @ applicable`.
-
-### OPTIONALS
-
-TODO

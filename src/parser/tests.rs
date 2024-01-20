@@ -1,41 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::parser::Parser;
-use crate::errors::ErrorScribe;
+    use crate::errors::ErrorScribe;
     use crate::lexer::Token;
     use crate::lexer::TokenType::*;
-    use crate::parser::Expression;
     use crate::parser::Expression::*;
+    use crate::parser::Parser;
     use crate::shared::WalksCollection;
-
-    impl Expression {
-        pub fn type_equals(&self, other: &Self) -> bool {
-            match (self, other) {
-                (RETURN_EXPR(expr), other) => {
-                    expr.type_equals(other)
-                }
-                (BLOCK(exprs), _) => {
-                    match exprs.last() {
-                        None => { false }
-                        Some(e) => { e.type_equals(other) }
-                    }
-                }
-                (LITERAL(_), LITERAL(_)) |
-                (UNARY { ..}, UNARY { .. }) |
-                (BINARY {.. }, BINARY {.. }) |
-                (LOGIC {.. }, LOGIC { .. }) |
-                (GROUPING(_), GROUPING(_)) |
-                (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
-                (VAR_RAW(_), VAR_RAW(_)) |
-                (APPLICATION { .. }, APPLICATION { .. }) |
-                (ASSOCIATION(_), ASSOCIATION(_)) |
-                (QUERY { .. }, QUERY { .. }) |
-                (NOTANEXPR, NOTANEXPR) => true,
-                (_, _) => false
-            }
-        }
-    }
-
 
     #[test]
     fn print_tree() {
@@ -57,7 +27,7 @@ use crate::errors::ErrorScribe;
     }
 
     #[test]
-    fn query_eval() {
+    fn eval_pull() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
             vec![
@@ -66,16 +36,15 @@ use crate::errors::ErrorScribe;
                 Token::debug(COLON),
                 Token::debug(INTEGER(3)),
                 Token::debug(RBRACKET),
-                Token::debug(POUND),
+                Token::debug(PULL),
                 Token::debug(INTEGER(2)),
             ],
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&QUERY {
+        assert!(expr.type_equals(&PULL_EXPR {
             source: Box::new(NOTANEXPR),
-            op: Token::debug(POUNDPOUND),
-            field: Box::new(NOTANEXPR),
+            key: Box::new(NOTANEXPR),
         }));
     }
 
@@ -303,8 +272,8 @@ use crate::errors::ErrorScribe;
         let mut p = Parser::from_tokens(
             vec![
                 Token::debug(LBRACE),
-                Token::debug(NOTATOKEN),
-                Token::debug(NOTATOKEN),
+                Token::debug(INTEGER(2)),
+                Token::debug(INTEGER(2)),
                 Token::debug(INTEGER(2)),
                 Token::debug(RBRACE),
             ],

@@ -66,7 +66,6 @@ pub enum ErrorType {
 
     EVAL_UNASSIGNED_VAR(String),
     EVAL_ITER_APPL_ON_NONITER(Value),
-    EVAL_UNQUERIABLE(Value),
     EVAL_KEY_NOT_FOUND,
     EVAL_INVALID_EXPR,
     EVAL_INVALID_LITERAL,
@@ -75,6 +74,7 @@ pub enum ErrorType {
     EVAL_ARGS_TO_NOT_APPLICABLE,
     EVAL_ARGS_TO_ITAPPLICABLE,
     EVAL_VAL_TO_NONIT_APPLICABLE,
+    EVAL_INVALID_PUSH,
 }
 
 #[derive(Debug)]
@@ -110,7 +110,6 @@ impl Display for Error {
             ErrorType::PARSER_NOTAVAR => "when declaring an applicable, only literals are allowed in the list of arguments".to_string(),
             ErrorType::EVAL_UNASSIGNED_VAR(varname) => format!("uninitialized variable: {}", varname),
             ErrorType::EVAL_ITER_APPL_ON_NONITER(val) => format!("cannot use @@ to feed `{}`", val),
-            ErrorType::EVAL_UNQUERIABLE(val) => format!("`{}` cannot be queried", val),
             ErrorType::EVAL_KEY_NOT_FOUND => "key not found".to_string(),
             ErrorType::EVAL_INVALID_EXPR => "could not parse this line".to_string(),
             ErrorType::EVAL_INVALID_LITERAL => "invalid literal".to_string(),
@@ -120,8 +119,7 @@ impl Display for Error {
             ErrorType::EVAL_ARGS_TO_ITAPPLICABLE => "the value fed to an it-applicable cannot be caged between '|'".to_string(),
             ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE => "the right side of the application is not an applicable".to_string(),
             ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE => "the value fed to an explicit applicable must be caged between '|'".to_string(),
-
-
+            ErrorType::EVAL_INVALID_PUSH => "the correct push syntax is `association << |key, value|`".to_string(),
             ErrorType::GENERICERROR => "generic error".to_string()
         };
         f.write_str(&*(self.err_location() + &*msg).red())
