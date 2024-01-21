@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::TokenType::*;
-use crate::shared::{Cursor, WalksCollection};
+use crate::{Cursor, WalksCollection};
 
 mod tests;
 

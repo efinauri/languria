@@ -108,3 +108,9 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
         println!("\t{}", &value);
     }
 }
+
+pub(crate) trait Red { fn red(&self) -> Self; }
+
+impl Red for String {
+    fn red(&self) -> Self { format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m") }
+}

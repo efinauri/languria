@@ -5,7 +5,7 @@ use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
-use crate::shared::{Cursor, WalksCollection};
+use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -31,6 +31,8 @@ pub enum Expression {
     UNDERSCORE_EXPR,
 
     NOTANEXPR,
+    // when an expr is desugared into a bigger one this is a way to evaluate once, and carry around,
+    // something that appears multiple times in the desugar
     VALUE_WRAPPER(Box<Value>),
 }
 
@@ -56,6 +58,7 @@ impl Expression {
             (APPLICATION { .. }, APPLICATION { .. }) |
             (ASSOCIATION(_), ASSOCIATION(_)) |
             (PULL_EXPR { .. }, PULL_EXPR { .. }) |
+            (PUSH_EXPR { .. }, PUSH_EXPR { .. }) |
             (UNDERSCORE_EXPR, UNDERSCORE_EXPR) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
@@ -113,10 +116,10 @@ impl Parser<'_> {
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
-        self.assign()
+        self.application()
     }
 
-    fn assign(&mut self) -> Expression {
+    fn application(&mut self) -> Expression {
         let mut expr = self.pull();
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();

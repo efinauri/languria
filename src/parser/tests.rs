@@ -5,7 +5,7 @@ mod tests {
     use crate::lexer::TokenType::*;
     use crate::parser::Expression::*;
     use crate::parser::Parser;
-    use crate::shared::WalksCollection;
+    use crate::WalksCollection;
 
     #[test]
     fn print_tree() {
@@ -27,7 +27,52 @@ mod tests {
     }
 
     #[test]
-    fn eval_pull() {
+    fn assignment() {
+        let mut es = ErrorScribe::debug();
+        let mut p = Parser::from_tokens(
+            vec![
+                Token::debug(IDENTIFIER(String::from("x"))),
+                Token::debug(ASSIGN),
+                Token::debug(INTEGER(2)),
+            ],
+            &mut es);
+        let expr = p.build_expression();
+        dbg!(&expr);
+        assert!(expr.type_equals(&VAR_ASSIGN {
+            varname: "".to_string(),
+            op: Token::debug(NOTATOKEN),
+            varval: Box::new(NOTANEXPR),
+        }));
+    }
+
+    #[test]
+    fn push() {
+        let mut es = ErrorScribe::debug();
+        let mut p = Parser::from_tokens(
+            vec![
+                Token::debug(LBRACKET),
+                Token::debug(INTEGER(2)),
+                Token::debug(COLON),
+                Token::debug(INTEGER(3)),
+                Token::debug(RBRACKET),
+                Token::debug(PUSH),
+                Token::debug(BAR),
+                Token::debug(INTEGER(2)),
+                Token::debug(COMMA),
+                Token::debug(INTEGER(2)),
+                Token::debug(BAR)
+            ],
+            &mut es);
+        let expr = p.build_expression();
+        dbg!(&expr);
+        assert!(expr.type_equals(&PUSH_EXPR {
+            obj: Box::new(NOTANEXPR),
+            args: Box::new(NOTANEXPR),
+        }));
+    }
+
+    #[test]
+    fn pull() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
             vec![
@@ -49,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn application_eval() {
+    fn application() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
             vec![
@@ -231,25 +276,6 @@ mod tests {
         assert!(!p.curr_is_seq(&[]));
         p.cursor.mov(100);
         assert!(!p.assert_curr_is(LT));
-    }
-
-    #[test]
-    fn assignment() {
-        let mut es = ErrorScribe::debug();
-        let mut p = Parser::from_tokens(
-            vec![
-                Token::debug(IDENTIFIER(String::from("x"))),
-                Token::debug(ASSIGN),
-                Token::debug(INTEGER(2)),
-            ],
-            &mut es);
-        let expr = p.build_expression();
-        dbg!(&expr);
-        assert!(expr.type_equals(&VAR_ASSIGN {
-            varname: "".to_string(),
-            op: Token::debug(NOTATOKEN),
-            varval: Box::new(NOTANEXPR),
-        }));
     }
 
     #[test]

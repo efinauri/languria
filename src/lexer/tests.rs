@@ -5,7 +5,7 @@ mod tests {
     use crate::errors::ErrorScribe;
     use crate::lexer::{Lexer, Token};
     use crate::lexer::TokenType::*;
-    use crate::shared::WalksCollection;
+    use crate::WalksCollection;
 
     #[test]
     fn type_equals() {

@@ -4,6 +4,7 @@ use std::process::exit;
 
 use crate::environment::Value;
 use crate::lexer::TokenType;
+use crate::user_io::Red;
 
 #[derive(PartialEq, Debug)]
 pub enum TerminationPolicy {
@@ -91,12 +92,6 @@ impl Error {
         }
     }
     fn err_location(&self) -> String { format!("[line #{}] ", self.line) }
-}
-
-trait Red { fn red(&self) -> Self; }
-
-impl Red for String {
-    fn red(&self) -> Self { format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m") }
 }
 
 impl Display for Error {

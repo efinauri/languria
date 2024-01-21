@@ -1,5 +1,5 @@
 use std::env;
-use languria::user_input::{interpret_file, serve_repl};
+use languria::user_io::{interpret_file, serve_repl};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

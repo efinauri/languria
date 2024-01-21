@@ -10,6 +10,7 @@ use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 use crate::parser::Expression::LITERAL;
+use crate::user_io::Red;
 
 pub struct Environment {
     scopes: Vec<Scope>,
@@ -241,7 +242,7 @@ impl PartialEq for Value {
                     f.write_str(&*format!("[{}]", str))
                 }
                 NOTAVAL => { f.write_str("no input.") }
-                ERRVAL => { f.write_str("ERR") }
+                ERRVAL => { f.write_str(&*"ERR".to_string().red()) }
                 RETURNVAL(val) => { f.write_str(&*val.to_string()) }
                 OPTIONVAL(val) => {
                     match val {
