@@ -50,6 +50,18 @@ mod tests {
     }
 
     #[test]
+    fn consume_seq_if_eq() {
+        let mut es = ErrorScribe::debug();
+        let mut l = Lexer::from_string(String::from("12345678"), &mut es);
+        dbg!(&l);
+        assert!(l.consume_seq_if_eq("1234"));
+        dbg!(&l);
+        assert_eq!(l.read_curr(), &'5');
+        assert!(!l.consume_seq_if_eq("567890"));
+        dbg!(&l);
+    }
+
+    #[test]
     fn consume_association() {
         let mut es = ErrorScribe::debug();
         let mut l = Lexer::from_string(String::from("[1:2]"), &mut es);

@@ -102,7 +102,39 @@ The following expressions all evaluate to `"Hello, world!"`:
 
 Note that a single string {placeholder} only accepts one single literal: you cannot evaluate expressions inside a string.
 
+### OPTIONS
+
+An option value is a container in which there could either be another value, or nothing.
+
+```
+yes_int = ?2
+no = ?_ // the empty option
+```
+
+To extract a value from an option that contains one, you can use the `|>` operator. 
+This operation fails if there's no value to pull out.
+
+```
+?3|> == 3
+// ?_|>  // cannot apply `EXTRACT` to operands `[?_]`
+```
+
 ### BOOLEANS
+
+A boolean value is either `true` or `false`. Booleans can be combined with the logical operations `not`, `and`, `or`, `xor`.
+
+The postfix operator `?!` can be used to interpret a value as a boolean:
+
+```
+0?! == false
+2.9?! == true  // integers and floats are intepreted as true when strictly greater than 0
+""?! == false
+[]?! == false
+"something"?! == true
+[1: 2]?! == true  // strings and associations are true when not empty
+?_?! == false
+?"something"?! == true // option values evaluate to 3 if they contain a value
+```
 
 ### INTEGERS AND FLOATS
 
@@ -117,27 +149,23 @@ The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both op
 8 ^ (1.0/3)  // 2.0
 ```
 
-### OPTIONS
-
-An option value is a container in which there could either be another value, or nothing.
-
-```
-yes_int = ?2
-no = ?_ // the empty option
-```
-
 ### ASSOCIATIONS
 
-An association is a mapping from certain values of a type (keys) to certain values of another type (values). The keys are ordered and cannot repeat.
+An association is a mapping from certain values (keys) to certain values (still called values). The keys are ordered and cannot repeat.
 
-You can pull a value from an association using the operator `>>` on its key. The result of this operation is always an option, with the value you were looking for inside it if the pull was successful.
+You can pull a value from an association using the operator `>>` pointing to its key. The result of this operation is an option, containing the value you were looking for inside it if the pull was successful.
+
+You can also skip this extra step and get the associated value right away through the `|>>` operator.
 ```
-$int_to_name = [1: "one", 2: "three", _: "not saying"]
-(int_to_name >>2) == ?"three"  // you can query an association with the operators ## and .
+$int_to_name = [1: "one", 2: "two", _: "not saying"]
+(int_to_name >>2) == ?"two"
+(int_to_name |>>2) == "two"
 (int_to_name >>100) == ?"not saying" // the special _ key associates any unmapped "something" to the value mapped by _. It's always the last key.
 
 no_default = [1: 2]
 (no_default >>100) == ?_
+
+[1: 1, "two": 2, 3: ?3]  // neither keys nor values have to share their types.
 ```
 If you're following along and trying the commands out, you probably noticed something strange the first line of the above example:
 its REPL output was `[1: (not yet evaluated), 2: (not yet evaluated), _: (not yet evaluated)]`.
@@ -159,6 +187,28 @@ new_association << |_, 5|  // [1; 4, _: 5]  // you can also set a default value 
 new_association << |1, _|  // [_: 5]  // pushing an underscore signifies that we want to drop that key.
 new_association << |_, _|  // []  // by the same token, you can also drop the association's default value in this way.
 ```
+
+Associations are, given certain conditions, treated as being in particular states.
+An association is in a _set state_ when all of its keys map to booleans, and it's in a _list state_ when its keys are the integers 0 to n.
+
+Lists and sets are easier to both instantiate and operate:
+```
+//  the :[items] shorthand, when declaring a list, refers to the fact that the right side of the key:value relationships can be inferred.
+list = :["faster", "way", "to", "declare", "associations"]
+//  a similar reasoning explains the [:items] annotation. here, the values are all set to true.
+set = [:"faster", "way", "to", "declare", "associations"]
+// remember that keys are unique
+!![:1, 2, 3, 2, 1]  // [1: true, 2: true, 3: true]
+```
+
+If the side of the key/value pair that we care about is a contiguous range of integers from a to b not including b, we can use this range syntax:
+```
+same_list = !!:[1..6]
+// if the range start is greater than the range's end, the numbers are reversed. 
+// note that the range start is still inclusive, and the range still stops before reaching the range's end.
+reversed_list = !!:[5..0]
+```
+
 
 
 ### APPLICABLES
@@ -188,13 +238,16 @@ When you store an unapplied expression into a variable, you can use that variabl
 countdown = [
   it > 1: $(it - 1) @ countdown,
   _: 0
-] >> true
+] |>> true
 
-5 @ countdown  // prints 4 3 2 1 and a very nested option of 0!
+5 @ countdown  // prints 4 3 2 1 and returns 0
 ```
 If you wish to define an applicable that accepts more than one value, you can use a more traditional syntax and specify its arguments like such:
 ```
 add = |a, b| a + b
 |3, 2| @ add == 5 
+ok_or = |opt, default| [opt?!: opt|>, _: default] |>> true
+|?3, 4| @ ok_or == 3
+|?_, 4| @ ok_or == 4
 ```
 Note that in this case you don't have access to the default placeholders, and you need to stick to the calling syntax `|arguments| @ applicable`.

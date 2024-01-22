@@ -1,11 +1,12 @@
 use std::ops::Deref;
 
-use crate::environment::{Environment, print_eol, Value};
-use crate::environment::Value::*;
+use crate::environment::{Environment, print_eol};
+use crate::environment::value::Value::*;
+use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
-use crate::parser::Expression;
+use crate::parser::{AssociationState, Expression};
 use crate::parser::Expression::UNDERSCORE_EXPR;
 
 mod tests;
@@ -17,16 +18,16 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
         => { env.read(varname, scribe).type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR))) }
 
         Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
-        Expression::APPLICABLE { .. } => { true }
+        Expression::APPLICABLE_EXPR { .. } => { true }
 
         Expression::VALUE_WRAPPER(_) |
         Expression::NOTANEXPR |
         Expression::VAR_ASSIGN { .. } |
         UNDERSCORE_EXPR => { false }
 
+        Expression::APPLICATION_EXPR { arg: expr, .. } |
         Expression::OPTION_EXPR(expr) |
         Expression::RETURN_EXPR(expr) |
-        Expression::APPLICATION { arg: expr, .. } |
         Expression::UNARY { expr, .. } |
         Expression::GROUPING(expr)
         => { is_expr_applicable(expr, env, scribe) }
@@ -37,9 +38,12 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
         => { is_expr_applicable(rhs, env, scribe) || is_expr_applicable(lhs, env, scribe) }
 
         Expression::ARGS(exprs) |
+        Expression::SET_DECLARATION_EXPR { items: exprs, .. } |
+        Expression::LIST_DECLARATION_EXPR { items: exprs, .. } |
         Expression::BLOCK(exprs)
         => { exprs.iter().any(|expr| is_expr_applicable(expr, env, scribe)) }
-        Expression::ASSOCIATION(pairs)
+
+        Expression::ASSOCIATION_EXPR(pairs)
         => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env, scribe) || is_expr_applicable(v, env, scribe)) }
 
         Expression::PUSH_EXPR { obj, args }
@@ -48,10 +52,10 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
 }
 
 pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment, subscoping: bool) -> Value {
-    if subscoping { env.create_scope(false); }
+    if subscoping { env.create_scope(); }
     let mut result = NOTAVAL;
     for expr in exprs {
-        let eval = eval_expr(&expr, env, es);
+        let eval = eval_expr(&expr, env, es, false);
         match eval {
             //exit on first evaluation error. careful about side effects.
             ERRVAL => {
@@ -70,26 +74,22 @@ pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, 
 }
 
 
-fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
-    match expr { // early check for extracting the value out of a var
-        Expression::VAR_RAW(varname) => {
-            let read_val = env.read(varname, scribe).clone();
-            return match read_val {
-                LAMBDAVAL(ex) => { eval_expr(&ex, env, scribe) }
-                _ => { read_val.clone() }
-            };
-        }
-        _ => {}
+fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe, evaluand: bool) -> Value {
+    if let Expression::VAR_RAW(varname) = expr {
+        let val = env.read(varname, scribe).clone();
+        return if let LAMBDAVAL(ex) = val {
+            eval_expr(ex.deref(), env, scribe, evaluand)
+        } else { val };
     }
-
-    // decide whether applicables should be stored or applied
-    if is_expr_applicable(expr, env, scribe) && !env.in_application() { return LAMBDAVAL(Box::new(expr.clone())); }
+    if !evaluand && is_expr_applicable(expr, env, scribe) { return LAMBDAVAL(Box::new(expr.clone())); }
 
     match expr {
-        // handled above or always part of a bigger expr
-        Expression::VAR_RAW(_) | Expression::ARGS(_) | UNDERSCORE_EXPR => { unreachable!() }
-        // reachable but erroneous expressions
-        Expression::APPLICABLE { .. } => {
+        Expression::VAR_RAW(_) | Expression::ARGS(_) | UNDERSCORE_EXPR => {
+            scribe.annotate_error(Error::on_line(env.curr_line,
+                                                 ErrorType::EVAL_UNEXPECTED_EXPRESSION));
+            ERRVAL
+        }
+        Expression::APPLICABLE_EXPR { .. } => {
             scribe.annotate_error(Error::on_line(env.curr_line,
                                                  ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE));
             ERRVAL
@@ -102,9 +102,16 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         Expression::VALUE_WRAPPER(val) => val.deref().clone(),
         Expression::OPTION_EXPR(ex) => {
             if ex.type_equals(&UNDERSCORE_EXPR) { OPTIONVAL(None) } else {
-                OPTIONVAL(Some(Box::new(eval_expr(ex, env, scribe))))
+                OPTIONVAL(Some(Box::new(eval_expr(ex, env, scribe, evaluand))))
             }
         }
+        Expression::LIST_DECLARATION_EXPR { range, items } => {
+            lib::eval_association_declaration(AssociationState::LIST, range, true, items, env, scribe, evaluand)
+        }
+        Expression::SET_DECLARATION_EXPR { range, items } => {
+            lib::eval_association_declaration(AssociationState::SET, range, true, items, env, scribe, evaluand)
+        }
+
         Expression::PUSH_EXPR { obj, args } => {
             // desugaring var << |k, v| into
             // var = var << |k, v|
@@ -118,24 +125,24 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
                             args: args.clone(),
                         }),
                     }, env, scribe,
-                );
+                    evaluand);
             }
-            lib::eval_push(obj, args, env, scribe)
+            lib::eval_push(obj, args, env, scribe, evaluand)
         }
-        Expression::PULL_EXPR { source, key: field } => {
-            let field = eval_expr(field, env, scribe);
-            let source = eval_expr(source, env, scribe);
-            lib::eval_pull(field, source, env, scribe)
+        Expression::PULL_EXPR { source, op, key: field } => {
+            let field = eval_expr(field, env, scribe, evaluand);
+            let source = eval_expr(source, env, scribe, evaluand);
+            lib::eval_pull(field, op, source, env, scribe, evaluand)
         }
-        Expression::ASSOCIATION(pairs) => { lib::eval_association(pairs, true, env, scribe) }
-        Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
-        Expression::APPLICATION { arg, op, body } => {
-            lib::eval_application(arg, op.clone(), body, env, scribe)
+        Expression::ASSOCIATION_EXPR(pairs) => { lib::eval_association(pairs, true, env, scribe, evaluand) }
+        Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe, evaluand))) }
+        Expression::APPLICATION_EXPR { arg, op, body } => {
+            lib::eval_application(arg, op.clone(), body, env, scribe, evaluand)
         }
         Expression::BLOCK(exprs) => { evaluate_expressions(exprs, scribe, env, true) }
-        Expression::GROUPING(expr) => { eval_expr(expr, env, scribe) }
+        Expression::GROUPING(expr) => { eval_expr(expr, env, scribe, evaluand) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
-            let val = eval_expr(varval, env, scribe);
+            let val = eval_expr(varval, env, scribe, evaluand);
             if val.type_equals(&ERRVAL) { return val; }
             env.write(varname, &val, op)
         }
@@ -159,14 +166,27 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
 
         Expression::UNARY { op, expr } => {
             if op.ttype == BANGBANG {
-                if let Expression::ASSOCIATION(pairs) = expr.deref() {
-                    return lib::eval_association(pairs, false, env, scribe);
-                }
+                return match expr.deref() {
+                    Expression::ASSOCIATION_EXPR(pairs) => { lib::eval_association(&pairs, false, env, scribe, evaluand) }
+                    Expression::LIST_DECLARATION_EXPR { range, items } => {
+                        lib::eval_association_declaration(AssociationState::LIST, range, false, items, env, scribe, evaluand)
+                    }
+                    Expression::SET_DECLARATION_EXPR { range, items } => {
+                        lib::eval_association_declaration(AssociationState::SET, range, false, items, env, scribe, evaluand)
+                    }
+                    _ => {
+                        scribe.annotate_error(Error::on_line(env.curr_line,
+                                                             ErrorType::EVAL_INVALID_OP(BANGBANG, vec![NOTAVAL])));
+                        return ERRVAL;
+                    }
+                };
             }
 
-            let val = eval_expr(expr, env, scribe);
+            let val = eval_expr(expr, env, scribe, evaluand);
             let ret = match op.ttype {
-                BANG => { val.bang_it() }
+                EXTRACT => { val.extract() }
+                ASBOOL => { val.as_bool_val() }
+                NOT => { val.not_it() }
                 MINUS => { val.minus_it() }
                 DOLLAR => {
                     val.print_it(op.line, env, None);
@@ -185,21 +205,21 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
         }
 
         Expression::LOGIC { lhs, op, rhs } => {
-            let lval = eval_expr(lhs, env, scribe);
+            let lval = eval_expr(lhs, env, scribe, evaluand);
             if lval.as_bool_val().type_equals(&ERRVAL) {
                 scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_NOT_BOOLEANABLE(lval)));
                 return ERRVAL;
             }
             let ret = match (&op.ttype, lval.as_bool_val()) {
                 (AND, BOOLEANVAL(bool)) => {
-                    if !bool { return lval; } else { eval_expr(rhs, env, scribe) }
+                    if !bool { return lval; } else { eval_expr(rhs, env, scribe, evaluand) }
                 }
                 (OR, BOOLEANVAL(bool)) => {
-                    if bool { return lval; } else { eval_expr(rhs, env, scribe) }
+                    if bool { return lval; } else { eval_expr(rhs, env, scribe, evaluand) }
                 }
                 (XOR, BOOLEANVAL(bool)) => {
-                    let ehrs = eval_expr(rhs, env, scribe);
-                    if bool { ehrs.bang_it() } else { ehrs }
+                    let ehrs = eval_expr(rhs, env, scribe, evaluand);
+                    if bool { ehrs.not_it() } else { ehrs }
                 }
                 _ => {
                     ERRVAL
@@ -213,12 +233,12 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe)
             ret
         }
         Expression::BINARY { lhs, op, rhs } => {
-            let lval = eval_expr(lhs, env, scribe);
+            let lval = eval_expr(lhs, env, scribe, evaluand);
             if op.ttype == DOLLAR {
                 lval.print_it(op.line, env, Some(rhs));
                 return lval;
             }
-            let rval = eval_expr(rhs, env, scribe);
+            let rval = eval_expr(rhs, env, scribe, evaluand);
 
             let ret = match op.ttype {
                 MINUS => { lval.minus_them(&rval) }

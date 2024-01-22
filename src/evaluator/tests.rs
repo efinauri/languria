@@ -2,8 +2,9 @@
 mod tests {
     use rand::Rng;
 
-    use crate::environment::{Environment, Value};
-    use crate::environment::Value::{BOOLEANVAL, INTEGERVAL, OPTIONVAL, STRINGVAL};
+    use crate::environment::Environment;
+    use crate::environment::value::Value::{BOOLEANVAL, INTEGERVAL, OPTIONVAL, STRINGVAL};
+    use crate::environment::value::Value;
     use crate::errors::ErrorScribe;
     use crate::evaluator::evaluate_expressions;
     use crate::lexer::Token;
@@ -54,10 +55,11 @@ mod tests {
             &vec![
                 Box::new(PULL_EXPR {
                     source: Box::new(
-                        ASSOCIATION(vec![
+                        ASSOCIATION_EXPR(vec![
                             (str_expr("s"), int_expr(2))
                         ])
                     ),
+                    op: PULL,
                     key: str_expr("s"),
                 })
             ],
@@ -76,10 +78,11 @@ mod tests {
             &vec![
                 Box::new(PULL_EXPR {
                     source: Box::new(
-                        ASSOCIATION(vec![
+                        ASSOCIATION_EXPR(vec![
                             (Box::new(UNDERSCORE_EXPR), int_expr(2))
                         ])
                     ),
+                    op: PULL,
                     key: str_expr("r"),
                 })
             ],
@@ -116,7 +119,7 @@ mod tests {
         let mut env = Environment::new();
         let v = evaluate_expressions(
             &vec![
-                Box::new(APPLICATION {
+                Box::new(APPLICATION_EXPR {
                     arg: int_expr(2),
                     op: Token::debug(AT),
                     body: Box::new(BINARY {
@@ -139,7 +142,7 @@ mod tests {
         let v = evaluate_expressions(
             &vec![
                 Box::new(UNARY {
-                    op: Token::debug(BANG),
+                    op: Token::debug(NOT),
                     expr: int_expr(2),
                 }),
             ],

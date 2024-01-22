@@ -7,9 +7,9 @@ use std::str::FromStr;
 
 use lazy_static::lazy_static;
 
+use crate::{Cursor, WalksCollection};
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::TokenType::*;
-use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -40,8 +40,9 @@ pub enum TokenType {
     OR,
     XOR,
     // unary ops
+    ASBOOL,
     DOLLAR,
-    BANG,
+    NOT,
     BANGBANG,
     // primitive types
     IDENTIFIER(String),
@@ -71,13 +72,18 @@ pub enum TokenType {
     ATAT,
     BAR,
     // associations
+    PULLEXTRACT,
     PULL,
     PUSH,
     COLON,
     COMMA,
     UNDERSCORE,
+    SET,
+    LIST,
+    RANGE,
     // options
     QUESTIONMARK,
+    EXTRACT,
     //
     NOTATOKEN,
     EOF,
@@ -94,7 +100,8 @@ lazy_static! {
         ("false", FALSE),
         ("and", AND),
         ("xor", XOR),
-        ("or", OR)
+        ("or", OR),
+        ("not", NOT)
 ]);
 }
 
@@ -164,6 +171,15 @@ impl<'a> Lexer<'_> {
             line_number: 1,
             scribe,
         }
+    }
+
+    fn consume_seq_if_eq(&mut self, seq: &str) -> bool {
+        if !self.can_peek(seq.len()) { return false; }
+        for (ch, i) in seq.chars().zip(0..) {
+            if self.peek(i) != &ch { return false }
+        }
+        self.cursor.mov(seq.len() as i32);
+        true
     }
 
     fn consume_next_if_eq(&mut self, other: char) -> bool {
@@ -262,20 +278,24 @@ impl<'a> Lexer<'_> {
                     self.line_number += 1;
                     continue;
                 }
+                ':' => if self.consume_next_if_eq('[') { LIST } else { COLON },
+                '[' => if self.consume_next_if_eq(':') { SET } else { LBRACKET },
+                ']' => RBRACKET,
                 '(' => LPAREN,
                 ')' => RPAREN,
                 '{' => LBRACE,
                 '}' => RBRACE,
-                '[' => LBRACKET,
-                ']' => RBRACKET,
                 ',' => COMMA,
-                ':' => COLON,
-                '.' => DOT,
-                '?' => QUESTIONMARK,
+                '.' => if self.consume_next_if_eq('.') { RANGE } else { DOT },
+                '?' => if self.consume_next_if_eq('!') { ASBOOL } else { QUESTIONMARK },
                 '_' => UNDERSCORE,
                 '%' => MODULO,
                 '^' => POW,
-                '|' => BAR,
+                '|' => if self.consume_seq_if_eq(">>") {
+                    PULLEXTRACT
+                } else if self.consume_next_if_eq('>') {
+                    EXTRACT
+                } else { BAR },
                 '@' => if self.consume_next_if_eq('@') { ATAT } else { AT },
                 '-' => if self.consume_next_if_eq('=') { MINUSASSIGN } else { MINUS },
                 '+' => if self.consume_next_if_eq('=') { PLUSASSIGN } else { PLUS },
@@ -289,7 +309,7 @@ impl<'a> Lexer<'_> {
                     UNEQ
                 } else if self.consume_next_if_eq('!') {
                     BANGBANG
-                } else { BANG }
+                } else { NOTATOKEN }
                 '=' => if self.consume_next_if_eq('=') {
                     EQ
                 } else if self.consume_next_if_eq('>') {
@@ -315,11 +335,13 @@ impl<'a> Lexer<'_> {
                 '0'..='9' => { self.consume_num(symbol) }
                 'a'..='z' | 'A'..='Z' => { self.consume_alphabet(symbol) }
                 _ => {
-                    self.scribe.annotate_error(
-                        Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
                     NOTATOKEN
                 }
             };
+            if ttyp == NOTATOKEN {
+                self.scribe.annotate_error(
+                    Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
+            }
             self.tokens.push(Token::new(ttyp, self.line_number));
         }
         self.scribe.enact_termination_policy();

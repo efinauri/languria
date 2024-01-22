@@ -89,6 +89,7 @@ mod tests {
         dbg!(&expr);
         assert!(expr.type_equals(&PULL_EXPR {
             source: Box::new(NOTANEXPR),
+            op: PULL,
             key: Box::new(NOTANEXPR),
         }));
     }
@@ -105,7 +106,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&APPLICATION {
+        assert!(expr.type_equals(&APPLICATION_EXPR {
             arg: Box::new(NOTANEXPR),
             op: Token::debug(NOTATOKEN),
             body: Box::new(NOTANEXPR),
@@ -181,7 +182,7 @@ mod tests {
     fn unary_exprs() {
         let mut es = ErrorScribe::debug();
         for (op_tok, idx) in vec![
-            Token::debug(BANG),
+            Token::debug(NOT),
             Token::debug(DOLLAR),
         ].iter().zip(0..)
         {
@@ -266,13 +267,13 @@ mod tests {
         assert!(p.curr_in(&[IDENTIFIER(String::from("Y"))]));
         p.cursor.mov(2);
         dbg!(&p.read_curr());
-        assert!(p.curr_in(&[LT, DOLLAR, BANG]));
+        assert!(p.curr_in(&[LT, DOLLAR, NOT]));
         assert!(p.curr_in(&[LT]));
-        assert!(!p.curr_in(&[DOLLAR, BANG]));
+        assert!(!p.curr_in(&[DOLLAR, NOT]));
         assert!(p.assert_curr_is(LT));
         assert!(p.curr_is_seq(&[LT, GTE]));
         assert!(!p.curr_is_seq(&[LT, GTE, LTE, LTE]));
-        assert!(!p.curr_is_seq(&[GT, BANG]));
+        assert!(!p.curr_is_seq(&[GT, NOT]));
         assert!(!p.curr_is_seq(&[]));
         p.cursor.mov(100);
         assert!(!p.assert_curr_is(LT));
@@ -331,6 +332,6 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&ASSOCIATION(vec![])));
+        assert!(expr.type_equals(&ASSOCIATION_EXPR(vec![])));
     }
 }

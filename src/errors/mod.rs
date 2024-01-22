@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::io::{stdout, Write};
 use std::process::exit;
 
-use crate::environment::Value;
+use crate::environment::value::Value;
 use crate::lexer::TokenType;
 use crate::user_io::Red;
 
@@ -76,6 +76,8 @@ pub enum ErrorType {
     EVAL_ARGS_TO_ITAPPLICABLE,
     EVAL_VAL_TO_NONIT_APPLICABLE,
     EVAL_INVALID_PUSH,
+    EVAL_INVALID_RANGE,
+    EVAL_UNEXPECTED_EXPRESSION,
 }
 
 #[derive(Debug)]
@@ -115,6 +117,9 @@ impl Display for Error {
             ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE => "the right side of the application is not an applicable".to_string(),
             ErrorType::EVAL_VAL_TO_NONIT_APPLICABLE => "the value fed to an explicit applicable must be caged between '|'".to_string(),
             ErrorType::EVAL_INVALID_PUSH => "the correct push syntax is `association << |key, value|`".to_string(),
+            ErrorType::EVAL_INVALID_RANGE => "cannot construct a range with the given boundaries".to_string(),
+            ErrorType::EVAL_UNEXPECTED_EXPRESSION => "cannot use underscore or argument expression standalone".to_string(),
+
             ErrorType::GENERICERROR => "generic error".to_string()
         };
         f.write_str(&*(self.err_location() + &*msg).red())

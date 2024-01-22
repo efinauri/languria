@@ -1,11 +1,11 @@
 use std::vec;
-use crate::environment::Value;
 
+use crate::{Cursor, WalksCollection};
+use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
-use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -20,13 +20,15 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW(String),
     BLOCK(Vec<Box<Expression>>),
-    APPLICATION { arg: Box<Expression>, op: Token, body: Box<Expression> },
+    APPLICATION_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
-    ASSOCIATION(Vec<(Box<Expression>, Box<Expression>)>),
-    PULL_EXPR { source: Box<Expression>, key: Box<Expression> },
+    ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>),
+    LIST_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
+    SET_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
+    PULL_EXPR { source: Box<Expression>, op: TokenType, key: Box<Expression> },
     PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
-    APPLICABLE { arg: Box<Expression>, body: Box<Expression> },
+    APPLICABLE_EXPR { arg: Box<Expression>, body: Box<Expression> },
     OPTION_EXPR(Box<Expression>),
     UNDERSCORE_EXPR,
 
@@ -49,14 +51,14 @@ impl Expression {
                 }
             }
             (LITERAL(_), LITERAL(_)) |
-            (UNARY { ..}, UNARY { .. }) |
-            (BINARY {.. }, BINARY {.. }) |
-            (LOGIC {.. }, LOGIC { .. }) |
+            (UNARY { .. }, UNARY { .. }) |
+            (BINARY { .. }, BINARY { .. }) |
+            (LOGIC { .. }, LOGIC { .. }) |
             (GROUPING(_), GROUPING(_)) |
             (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
             (VAR_RAW(_), VAR_RAW(_)) |
-            (APPLICATION { .. }, APPLICATION { .. }) |
-            (ASSOCIATION(_), ASSOCIATION(_)) |
+            (APPLICATION_EXPR { .. }, APPLICATION_EXPR { .. }) |
+            (ASSOCIATION_EXPR(_), ASSOCIATION_EXPR(_)) |
             (PULL_EXPR { .. }, PULL_EXPR { .. }) |
             (PUSH_EXPR { .. }, PUSH_EXPR { .. }) |
             (UNDERSCORE_EXPR, UNDERSCORE_EXPR) |
@@ -65,13 +67,17 @@ impl Expression {
         }
     }
 }
-
+#[derive(PartialEq)]
 pub enum AssociationState {
-    SET,
-    LIST,
-    MAP,
+    SET, LIST
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub enum InputState {
+    RANGE, ITEMS
+}
+
+const PULL_TOKENS: [TokenType; 2] = [PULL, PULLEXTRACT];
 const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
 const ASSIGN_TOKENS: [TokenType; 9] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN, MODULOASSIGN, POWASSIGN];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
@@ -79,7 +85,9 @@ const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_MED_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 1] = [POW];
-const UNARY_TOKENS: [TokenType; 4] = [BANG, BANGBANG, MINUS, DOLLAR];
+const UNARY_TOKENS: [TokenType; 4] = [NOT, BANGBANG, MINUS, DOLLAR];
+
+const POSTFIX_UNARY_TOKENS : [TokenType; 2] = [ASBOOL, EXTRACT];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
@@ -109,6 +117,7 @@ impl Parser<'_> {
         }
     }
 
+    ///cursor will be after the built expression.
     fn build_expression(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_line(
@@ -123,24 +132,24 @@ impl Parser<'_> {
         let mut expr = self.pull();
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
-            expr = APPLICATION {
+            expr = APPLICATION_EXPR {
                 arg: Box::new(expr),
                 op: self.read_prev().clone(),
-                body: Box::new(self.build_expression())
+                body: Box::new(self.build_expression()),
             }
         }
         expr
-
     }
 
 
     fn pull(&mut self) -> Expression {
         let mut expr = self.push();
-        while self.curr_in(&[PULL]) {
+        while self.curr_in(&PULL_TOKENS) {
             self.cursor.step_fwd();
             expr = PULL_EXPR {
                 source: Box::new(expr),
-                key: Box::new(self.build_expression())
+                op: self.read_prev().ttype.clone(),
+                key: Box::new(self.build_expression()),
             }
         }
         expr
@@ -244,6 +253,7 @@ impl Parser<'_> {
         expr
     }
 
+
     fn unary(&mut self) -> Expression {
         if self.curr_in(&UNARY_TOKENS) {
             let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
@@ -257,7 +267,12 @@ impl Parser<'_> {
             self.cursor.step_fwd();
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
         }
-        self.primary()
+        let mut expr = self.primary();
+        if self.curr_in(&POSTFIX_UNARY_TOKENS) {
+            self.cursor.step_fwd();
+            expr = UNARY {op: self.read_prev().clone(), expr: Box::new(expr)}
+        }
+        expr
     }
 
     fn primary(&mut self) -> Expression {
@@ -269,11 +284,19 @@ impl Parser<'_> {
         }
         let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
         return match ttype {
+            LIST => {
+                self.cursor.step_fwd();
+                self.build_association_declaration(true)
+            }
+            SET => {
+                self.cursor.step_fwd();
+                self.build_association_declaration(false)
+            }
             QUESTIONMARK => {
                 self.cursor.step_fwd();
-                OPTION_EXPR(Box::new(self.build_expression()))
+                OPTION_EXPR(Box::new(self.primary()))
             }
-            LBRACKET => { self.process_association(AssociationState::MAP) }
+            LBRACKET => { self.process_association() }
             IDENTIFIER(str) => { self.process_assignment(str) }
             LBRACE => { self.process_code_block() }
             RETURN => {
@@ -308,17 +331,20 @@ impl Parser<'_> {
                             return NOTANEXPR;
                         }.clone();
                         self.cursor.step_fwd();
-                        APPLICATION { arg: Box::new(arg), op, body: Box::new(VAR_RAW(varname)) }
+                        APPLICATION_EXPR { arg: Box::new(arg), op, body: Box::new(VAR_RAW(varname)) }
                     }
                     (true, false) => {
-                        APPLICABLE { arg: Box::new(arg), body: Box::new(self.build_expression()) }
+                        APPLICABLE_EXPR { arg: Box::new(arg), body: Box::new(self.build_expression()) }
                     }
                     (false, false) => {
                         arg
                     }
                 }
             }
-            UNDERSCORE => { self.cursor.step_fwd(); UNDERSCORE_EXPR },
+            UNDERSCORE => {
+                self.cursor.step_fwd();
+                UNDERSCORE_EXPR
+            }
             IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL(self.read_prev().clone())
@@ -340,7 +366,7 @@ impl Parser<'_> {
         };
     }
 
-    fn process_association(&mut self, association_state: AssociationState) -> Expression {
+    fn process_association(&mut self) -> Expression {
         self.cursor.step_fwd();
         let mut keys = vec![];
         let mut vals = vec![];
@@ -357,7 +383,7 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
-        ASSOCIATION(keys.iter().map(|k| k.to_owned()).zip(vals).collect())
+        ASSOCIATION_EXPR(keys.iter().map(|k| k.to_owned()).zip(vals).collect())
     }
 
     fn process_code_block(&mut self) -> Expression {
@@ -416,5 +442,32 @@ impl Parser<'_> {
         self.can_consume() && ttypes.iter().any(
             |tt| self.read_curr().type_equals(tt)
         )
+    }
+    fn build_association_declaration(&mut self, list: bool) -> Expression {
+        let mut input_state = InputState::ITEMS;
+        let expr = self.build_expression();
+        if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+        let mut items = vec![Box::new(expr)];
+        if self.curr_in(&[RANGE]) {
+            input_state = InputState::RANGE;
+            self.cursor.step_fwd();
+            let expr = self.build_expression();
+            if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+            items.push(Box::new(expr));
+        } else {
+            self.assert_curr_is(COMMA);
+            self.cursor.step_fwd();
+            while !self.curr_in(&[RBRACKET]) {
+                let expr = self.build_expression();
+                if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+                items.push(Box::new(expr));
+                if self.curr_in(&[COMMA]) {
+                    self.cursor.step_fwd();
+                }
+            }
+        }
+        self.assert_curr_is(RBRACKET);
+        self.cursor.step_fwd();
+        if list { LIST_DECLARATION_EXPR { range: input_state, items } } else { SET_DECLARATION_EXPR { range: input_state, items } }
     }
 }
