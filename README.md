@@ -6,11 +6,11 @@ __TABLE OF CONTENTS__
   * [PRINT](#print)
   * [TYPES](#types)
     * [STRINGS](#strings)
+    * [OPTIONS](#options)
     * [BOOLEANS](#booleans)
     * [INTEGERS AND FLOATS](#integers-and-floats)
     * [ASSOCIATIONS](#associations)
     * [APPLICABLES](#applicables)
-    * [OPTIONS](#options)
 <!-- TOC -->
 
 # ABOUT
@@ -36,7 +36,7 @@ This is an overview of the primitive types:
 | Boolean     | `true`       | [link](#BOOLEANS)            |
 | String      | `example`    | [link](#STRINGS)             |
 | Association | `[1: "one"]` | [link](#ASSOCIATIONS)        |
-| Option      | `<0.8>`      | [link](OPTIONS)              |
+| Option      | `<0.8>`      | [link](#OPTIONS)             |
 | Applicable  | `it * 2`     | [link](#APPLICABLES)         |
 | Literal     | `x`          | -                            |
 
@@ -218,9 +218,8 @@ During an application, the applicable's body is evaluated with those values in p
 ```
 add_one = it + 1
 2 @ add_one == 3
-add_two = add_one @ add_one  // note that an application whose left hand side is unapplied is, in turn, unapplied.
-2 @ add_two == 4
-2 @ add_one @ add_one == 4  // you can also chain applications directly.
+2 @ add_one @ add_one == 4 
+4 @ it^2 @ it/3 == 5 // if you chain applicables, they will be evaluated in reading order
 ```
 Applicables have 3 default placeholders: `it`, `ti` and `idx`. During an application in which a single value fed to the applicable, `it` is the only placeholder needed.
 
@@ -246,8 +245,16 @@ If you wish to define an applicable that accepts more than one value, you can us
 ```
 add = |a, b| a + b
 |3, 2| @ add == 5 
+
 ok_or = |opt, default| [opt?!: opt|>, _: default] |>> true
 |?3, 4| @ ok_or == 3
 |?_, 4| @ ok_or == 4
+
+map_val = |assoc, fn_val| {
+    new_assoc = []
+    assoc @@ new_assoc << |ti, it @ fn_val|
+    new_assoc
+}
+|:[1..6], it^2| @ map_val  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
 ```
 Note that in this case you don't have access to the default placeholders, and you need to stick to the calling syntax `|arguments| @ applicable`.

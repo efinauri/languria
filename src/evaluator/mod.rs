@@ -23,12 +23,12 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
             [IT, TI, IDX].contains(&value.ttype) }
         Expression::APPLICABLE_EXPR { .. } => { true }
 
+        Expression::APPLICATION_EXPR { .. } |
         Expression::VALUE_WRAPPER(_) |
         Expression::NOTANEXPR |
         Expression::VAR_ASSIGN { .. } |
         UNDERSCORE_EXPR => { false }
 
-        Expression::APPLICATION_EXPR { arg: expr, .. } |
         Expression::OPTION_EXPR(expr) |
         Expression::RETURN_EXPR(expr) |
         Expression::UNARY { expr, .. } |
