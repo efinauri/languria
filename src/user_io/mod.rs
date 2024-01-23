@@ -27,7 +27,7 @@ pub fn interpret_file(filename: &str, verbose: bool) {
                 dbg!(&buf);
                 file = File::open(buf).expect("No such file.");
             }
-            _ => {panic!("No such file.")}
+            _ => { panic!("No such file.") }
         }
     }
     let mut content = String::new();
@@ -100,7 +100,7 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
         }
     }
     let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();
-    let value = evaluate_expressions(&input_exprs, scribe, env, false);
+    let value = evaluate_expressions(&input_exprs, scribe, env, false, false);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {

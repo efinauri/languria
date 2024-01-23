@@ -43,7 +43,7 @@ mod tests {
         let v = evaluate_expressions(
             &vec![],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
     }
 
@@ -64,7 +64,7 @@ mod tests {
                 })
             ],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("s"))
@@ -87,7 +87,7 @@ mod tests {
                 })
             ],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("r"))
@@ -107,7 +107,7 @@ mod tests {
                 ))
             ],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_eq!(v, int_val(2));
         assert_ne!(v, str_val("s"))
@@ -129,7 +129,7 @@ mod tests {
                     }),
                 })],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_ne!(v, int_val(2));
         assert_eq!(v, str_val("ss"))
@@ -147,7 +147,7 @@ mod tests {
                 }),
             ],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_ne!(v, int_val(2));
         assert_eq!(v, BOOLEANVAL(false))
@@ -180,7 +180,7 @@ mod tests {
                             )
                         ],
                         &mut es,
-                        &mut env, false);
+                        &mut env, false, false);
                     dbg!(&v);
                     assert_eq!(v, BOOLEANVAL(op(lhs, rhs)))
                 }
@@ -221,7 +221,7 @@ mod tests {
                         )
                     ],
                     &mut es,
-                    &mut env, false);
+                    &mut env, false, false);
                 dbg!(a, &tok, b, &v);
                 assert_eq!(v, INTEGERVAL(op(a, b)))
             }
@@ -263,7 +263,7 @@ mod tests {
                         )
                     ],
                     &mut es,
-                    &mut env, false);
+                    &mut env, false, false);
                 dbg!(&v);
                 assert_eq!(v, BOOLEANVAL(op(a, b)))
             }
@@ -284,7 +284,7 @@ mod tests {
                 str_expr("x={x}{x}"),
             ],
             &mut es,
-            &mut env, false);
+            &mut env, false, false);
         dbg!(&v);
         assert_eq!(v, str_val("x=22"))
     }

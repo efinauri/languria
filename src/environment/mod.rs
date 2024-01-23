@@ -1,12 +1,14 @@
 use std::collections::HashMap;
-use value::Value;
 
+use value::Value;
 use value::Value::*;
+
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 
 pub(crate) mod value;
+
 pub struct Environment {
     scopes: Vec<Scope>,
     pub curr_line: usize,
@@ -28,14 +30,25 @@ impl Environment {
     pub fn destroy_scope(&mut self) { if self.scopes.len() > 1 { self.scopes.pop(); } }
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
 
-    pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
+
+    pub fn try_read(&self, varname: &String) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.variables.get(varname) { return val; }
+            if let Some(val) = scope.variables.get(varname) { return Some(val); }
         }
-        scribe.annotate_error(Error::on_line(self.curr_line,
-                                             ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
-        &ERRVAL
+        None
     }
+
+    pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
+        match self.try_read(varname) {
+            Some(value) => { value }
+            None => {
+                scribe.annotate_error(Error::on_line(self.curr_line,
+                                                     ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
+                &ERRVAL
+            }
+        }
+    }
+
     pub fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let limit = self.scopes.len() - 1;
         for (scope, i) in &mut self.scopes.iter_mut().zip(0..) {
@@ -93,9 +106,9 @@ impl Scope {
 }
 
 pub fn print_eol(env: &mut Environment, line: &usize) -> Value {
-        let start_new_line = env.last_print_line != *line;
-        env.last_print_line = *line;
-        let to_print = format!("[{}:{}]", env.curr_scope().entry_point, line);
-        if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
-        NOTAVAL
-    }
+    let start_new_line = env.last_print_line != *line;
+    env.last_print_line = *line;
+    let to_print = format!("[{}:{}]", env.curr_scope().entry_point, line);
+    if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
+    NOTAVAL
+}

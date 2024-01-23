@@ -15,9 +15,12 @@ mod lib;
 pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut ErrorScribe) -> bool {
     match expr {
         Expression::VAR_RAW(varname)
-        => { env.read(varname, scribe).type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR))) }
+        => {
+            env.try_read(varname).is_some_and(|v|v.type_equals(&LAMBDAVAL(Box::new(Expression::NOTANEXPR))))
+        }
 
-        Expression::LITERAL(value) => { [IT, TI, IDX].contains(&value.ttype) }
+        Expression::LITERAL(value) => {
+            [IT, TI, IDX].contains(&value.ttype) }
         Expression::APPLICABLE_EXPR { .. } => { true }
 
         Expression::VALUE_WRAPPER(_) |
@@ -44,18 +47,19 @@ pub fn is_expr_applicable(expr: &Expression, env: &Environment, scribe: &mut Err
         => { exprs.iter().any(|expr| is_expr_applicable(expr, env, scribe)) }
 
         Expression::ASSOCIATION_EXPR(pairs)
-        => { pairs.iter().any(|(k, v)| is_expr_applicable(k, env, scribe) || is_expr_applicable(v, env, scribe)) }
+        => { pairs.iter().any(|(k, v)|
+            is_expr_applicable(k, env, scribe) || is_expr_applicable(v, env, scribe)) }
 
         Expression::PUSH_EXPR { obj, args }
         => { is_expr_applicable(obj, env, scribe) || is_expr_applicable(args, env, scribe) }
     }
 }
 
-pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment, subscoping: bool) -> Value {
+pub fn evaluate_expressions(exprs: &Vec<Box<Expression>>, es: &mut ErrorScribe, env: &mut Environment, subscoping: bool, evaluand: bool) -> Value {
     if subscoping { env.create_scope(); }
     let mut result = NOTAVAL;
     for expr in exprs {
-        let eval = eval_expr(&expr, env, es, false);
+        let eval = eval_expr(&expr, env, es, evaluand);
         match eval {
             //exit on first evaluation error. careful about side effects.
             ERRVAL => {
@@ -139,7 +143,7 @@ fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe,
         Expression::APPLICATION_EXPR { arg, op, body } => {
             lib::eval_application(arg, op.clone(), body, env, scribe, evaluand)
         }
-        Expression::BLOCK(exprs) => { evaluate_expressions(exprs, scribe, env, true) }
+        Expression::BLOCK(exprs) => { evaluate_expressions(exprs, scribe, env, true, evaluand) }
         Expression::GROUPING(expr) => { eval_expr(expr, env, scribe, evaluand) }
         Expression::VAR_ASSIGN { varname, op, varval } => {
             let val = eval_expr(varval, env, scribe, evaluand);

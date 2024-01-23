@@ -107,13 +107,13 @@ pub fn eval_application(arg: &Box<Expression>,
     let args = eval_application_args(arg, env, scribe, evaluand);
     env.create_scope();
     let ret = if let Expression::ARGS(_) = arg.deref() {
-        eval_parametrized_application(&args, body, env, scribe, evaluand)
+        eval_parametrized_application(&args, body, env, scribe)
     } else if op.type_equals(&AT) {
         // eval anonymous single application: 3 @ it + 1
         env.write_binding(&String::from("it"), &args.get(0).unwrap());
         eval_expr(body, env, scribe, true)
     } else {
-        eval_iterated_application(args.get(0).unwrap().clone(), body, env, scribe, evaluand)
+        eval_iterated_application(args.get(0).unwrap().clone(), body, env, scribe)
     };
     env.destroy_scope();
     return ret;
@@ -125,7 +125,7 @@ fn eval_application_args(arg: &Box<Expression>, env: &mut Environment, scribe: &
     } else { vec![eval_expr(arg, env, scribe, evaluand)] }
 }
 
-fn eval_parametrized_application(args: &Vec<Value>, body: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe, evaluand: bool) -> Value {
+fn eval_parametrized_application(args: &Vec<Value>, body: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     // | args | @ variable containing applicable, where
     // applicable = | params | expr
 
@@ -160,7 +160,7 @@ fn eval_parametrized_application(args: &Vec<Value>, body: &Box<Expression>, env:
             );
         }
     }
-    eval_expr(applicable.1.deref(), env, scribe, evaluand)
+    eval_expr(applicable.1.deref(), env, scribe, true)
 }
 
 fn eval_iterated_application(
@@ -168,24 +168,23 @@ fn eval_iterated_application(
     body: &Box<Expression>,
     env: &mut Environment,
     scribe: &mut ErrorScribe,
-    evaluand: bool,
 ) -> Value {
     let mut ret = NOTAVAL;
     if let ASSOCIATIONVAL(map) = arg {
         for ((it, ti), idx) in map.iter().zip(0..) {
             let unlazy_ti;
-            if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, scribe, evaluand); } else { unlazy_ti = ti.deref().clone() }
+            if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, scribe, true); } else { unlazy_ti = ti.deref().clone() }
             env.write_binding(&String::from("it"), &it);
             env.write_binding(&String::from("ti"), &unlazy_ti);
             env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-            ret = eval_expr(body, env, scribe, evaluand);
+            ret = eval_expr(body, env, scribe, true);
         }
         ret
     } else if let STRINGVAL(str) = arg {
         for (it, idx) in str.chars().zip(0..) {
             env.write_binding(&String::from("it"), &STRINGVAL(it.to_string()));
             env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-            ret = eval_expr(body, env, scribe, evaluand);
+            ret = eval_expr(body, env, scribe, true);
         }
         ret
     } else {
