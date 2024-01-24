@@ -23,6 +23,7 @@ impl Environment {
             last_print_line: 0,
         }
     }
+
     pub fn create_scope(&mut self) {
         let scope = Scope::new();
         self.scopes.push(scope);
@@ -40,7 +41,8 @@ impl Environment {
 
     pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
         match self.try_read(varname) {
-            Some(value) => { value }
+            Some(value) => {
+                value }
             None => {
                 scribe.annotate_error(Error::on_line(self.curr_line,
                                                      ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
@@ -64,7 +66,7 @@ impl Environment {
     }
 }
 
-
+#[derive(Debug)]
 pub struct Scope {
     variables: HashMap<String, Value>,
     entry_point: String,

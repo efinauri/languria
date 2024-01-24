@@ -6,7 +6,7 @@ use crate::environment::value::Value::{ASSOCIATIONVAL, ERRVAL, INTEGERVAL, LAMBD
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::eval_expr;
 use crate::lexer::{Token, TokenType};
-use crate::lexer::TokenType::{ASSIGN, AT, PULL, PULLEXTRACT, PUSH};
+use crate::lexer::TokenType::{ASSIGN, ATAT, PULL, PULLEXTRACT, PUSH};
 use crate::parser::{AssociationState, Expression, InputState};
 use crate::parser::Expression::UNDERSCORE_EXPR;
 
@@ -15,23 +15,22 @@ pub fn eval_association(
     lazy: bool,
     env: &mut Environment,
     scribe: &mut ErrorScribe,
-    evaluand: bool,
 ) -> Value {
     let mut map = ValueMap::new();
     // all code branching needs to be lazily evaluated, even the ones that aren't applicables
     // (because of side effects)
     for (k, v) in pairs {
-        let v = if lazy { LAZYVAL(v.clone()) } else { eval_expr(v, env, scribe, evaluand) };
+        let v = if lazy { LAZYVAL(v.clone()) } else { eval_expr(v, env, scribe) };
         if k.type_equals(&UNDERSCORE_EXPR) {
             map.default = Some(Box::new(v));
             continue;
         }
-        map.insert(eval_expr(k, env, scribe, evaluand), v);
+        map.insert(eval_expr(k, env, scribe), v);
     }
     ASSOCIATIONVAL(map)
 }
 
-pub fn eval_pull(field: Value, op: &TokenType, source: Value, env: &mut Environment, scribe: &mut ErrorScribe, evaluand: bool) -> Value {
+pub fn eval_pull(field: Value, op: &TokenType, source: Value, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     return match source {
         ASSOCIATIONVAL(map) => {
             let mut query_expr = None;
@@ -42,7 +41,7 @@ pub fn eval_pull(field: Value, op: &TokenType, source: Value, env: &mut Environm
                 if let LAZYVAL(ex) = val.deref() { query_expr = Some(ex.clone()); } else { query_val = Some(*val); };
             }
             let val = match (query_expr, query_val) {
-                (Some(ex), None) => { Some(Box::new(eval_expr(&ex, env, scribe, evaluand))) }
+                (Some(ex), None) => { Some(Box::new(eval_expr(&ex, env, scribe))) }
                 (None, Some(val)) => { Some(Box::new(val.clone())) }
                 (None, None) => { None }
                 (_, _) => { unreachable!() }
@@ -63,11 +62,10 @@ pub fn eval_pull(field: Value, op: &TokenType, source: Value, env: &mut Environm
 
 pub fn eval_push(
     obj: &Expression, args: &Expression, env: &mut Environment, scribe: &mut ErrorScribe,
-    evaluand: bool,
 ) -> Value {
     // the caller performs desugaring to ensure that obj is not a variable
 
-    let mut obj = eval_expr(obj, env, scribe, evaluand);
+    let mut obj = eval_expr(obj, env, scribe);
     let else_branch = vec![];
     let exprs = if let Expression::ARGS(exprs) = args { exprs } else { &else_branch };
     if exprs.len() != 2 {
@@ -79,12 +77,12 @@ pub fn eval_push(
         ASSOCIATIONVAL(ref mut map) => {
             match (exprs.get(0).unwrap().deref(), exprs.get(1).unwrap().deref()) {
                 (UNDERSCORE_EXPR, UNDERSCORE_EXPR) => { map.default = None; }
-                (UNDERSCORE_EXPR, val) => { map.default = Some(Box::new(eval_expr(val, env, scribe, evaluand))); }
-                (key, UNDERSCORE_EXPR) => { map.remove(eval_expr(key, env, scribe, evaluand)); }
+                (UNDERSCORE_EXPR, val) => { map.default = Some(Box::new(eval_expr(val, env, scribe))); }
+                (key, UNDERSCORE_EXPR) => { map.remove(eval_expr(key, env, scribe)); }
                 (key, val) => {
                     map.insert(
-                        eval_expr(key, env, scribe, evaluand),
-                        eval_expr(val, env, scribe, evaluand),
+                        eval_expr(key, env, scribe),
+                        eval_expr(val, env, scribe),
                     );
                 }
             };
@@ -99,58 +97,46 @@ pub fn eval_push(
 }
 
 pub fn eval_application(arg: &Box<Expression>,
-                        op: Token,
+                        op: &TokenType,
                         body: &Box<Expression>,
                         env: &mut Environment,
-                        scribe: &mut ErrorScribe,
-                        evaluand: bool) -> Value {
-    let args = eval_application_args(arg, env, scribe, evaluand);
-    env.create_scope();
-    let ret = if let Expression::ARGS(_) = arg.deref() {
-        eval_parametrized_application(&args, body, env, scribe)
-    } else if op.type_equals(&AT) {
-        // eval anonymous single application: 3 @ it + 1
-        env.write_binding(&String::from("it"), &args.get(0).unwrap());
-        eval_expr(body, env, scribe, true)
-    } else {
-        eval_iterated_application(args.get(0).unwrap().clone(), body, env, scribe)
-    };
+                        scribe: &mut ErrorScribe) -> Value {
+    let args = eval_application_args(arg, env, scribe);
+    let ret;
+    if op == &ATAT {
+        env.create_scope();
+        ret = eval_iterated_application(args.get(0).unwrap().clone(), body, env, scribe)
+    }
+    else {
+        let body = eval_expr(body, env, scribe);
+        env.create_scope();
+        if let Expression::ARGS(_) = arg.deref() {
+            ret = eval_parametrized_application(&args, &body, env, scribe);
+        } else {
+            ret = eval_parametrized_application(&args, &body, env, scribe);
+        }
+    }
     env.destroy_scope();
     return ret;
 }
 
-fn eval_application_args(arg: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe, evaluand: bool) -> Vec<Value> {
+fn eval_application_args(arg: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe) -> Vec<Value> {
     if let Expression::ARGS(args) = arg.deref() {
-        args.iter().map(|ex| eval_expr(ex, env, scribe, evaluand)).collect()
-    } else { vec![eval_expr(arg, env, scribe, evaluand)] }
+        args.iter().map(|ex| eval_expr(ex, env, scribe)).collect()
+    } else { vec![eval_expr(arg, env, scribe)] }
 }
 
-fn eval_parametrized_application(args: &Vec<Value>, body: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
-    // | args | @ variable containing applicable, where
-    // applicable = | params | expr
+fn eval_parametrized_application(args: &Vec<Value>, body: &Value, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
+    // | args | @ lambdaval (with params and body)
 
-    // must be applied to var raw (func name)
-    let varval = if let Expression::VAR_RAW(name) = body.deref() { env.read(name, scribe) } else {
+    // body must contain lambda
+    let lambda_contents = if let LAMBDAVAL { params, body } = body {
+        (params.deref().clone(), body.deref().clone())
+    } else {
         scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE));
         return ERRVAL;
     };
-    // // var must contain lambda
-    let lambda = if let LAMBDAVAL(ex) = varval { ex.deref().clone() } else {
-        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE));
-        return ERRVAL;
-    };
-    // lambda must be wrapping an applicable
-    let applicable = if let Expression::APPLICABLE_EXPR {
-        arg, body
-    } = lambda { (arg, body) } else {
-        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::EVAL_ARGS_TO_ITAPPLICABLE));
-        return ERRVAL;
-    };
-    // and the applicable must have params as the arg
-    let params = if let Expression::ARGS(params) = *applicable.0 { params } else {
-        scribe.annotate_error(Error::on_line(env.curr_line, ErrorType::GENERICERROR));
-        return ERRVAL;
-    };
+    let params = if let Expression::ARGS(params) = lambda_contents.0 { params } else { unreachable!() };
     for (arg, param) in args.iter().zip(params) {
         if let Expression::VAR_RAW(name) = param.deref() {
             env.write(
@@ -160,7 +146,7 @@ fn eval_parametrized_application(args: &Vec<Value>, body: &Box<Expression>, env:
             );
         }
     }
-    eval_expr(applicable.1.deref(), env, scribe, true)
+    eval_expr(&lambda_contents.1, env, scribe)
 }
 
 fn eval_iterated_application(
@@ -173,18 +159,18 @@ fn eval_iterated_application(
     if let ASSOCIATIONVAL(map) = arg {
         for ((it, ti), idx) in map.iter().zip(0..) {
             let unlazy_ti;
-            if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, scribe, true); } else { unlazy_ti = ti.deref().clone() }
+            if let LAZYVAL(ex) = ti.deref() { unlazy_ti = eval_expr(ex, env, scribe); } else { unlazy_ti = ti.deref().clone() }
             env.write_binding(&String::from("it"), &it);
             env.write_binding(&String::from("ti"), &unlazy_ti);
             env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-            ret = eval_expr(body, env, scribe, true);
+            ret = eval_expr(body, env, scribe);
         }
         ret
     } else if let STRINGVAL(str) = arg {
         for (it, idx) in str.chars().zip(0..) {
             env.write_binding(&String::from("it"), &STRINGVAL(it.to_string()));
             env.write_binding(&String::from("idx"), &INTEGERVAL(idx));
-            ret = eval_expr(body, env, scribe, true);
+            ret = eval_expr(body, env, scribe);
         }
         ret
     } else {
@@ -222,10 +208,9 @@ pub fn eval_association_declaration(
     items: &Vec<Box<Expression>>,
     env: &mut Environment,
     scribe: &mut ErrorScribe,
-    evaluand: bool,
 ) -> Value {
-    match desugar_association_pairs(assoc_state, input_state, items, env, scribe, evaluand) {
-        Some(pairs) => { eval_association(&pairs, is_lazy, env, scribe, evaluand) }
+    match desugar_association_pairs(assoc_state, input_state, items, env, scribe) {
+        Some(pairs) => { eval_association(&pairs, is_lazy, env, scribe) }
         None => {
             scribe.annotate_error(Error::on_line(env.curr_line,
                                                  ErrorType::EVAL_INVALID_RANGE));
@@ -240,11 +225,10 @@ fn desugar_association_pairs(
     items: &Vec<Box<Expression>>,
     env: &mut Environment,
     scribe: &mut ErrorScribe,
-    evaluand: bool,
 ) -> Option<Vec<(Box<Expression>, Box<Expression>)>> {
     let mut pairs = vec![];
     if input_state == &InputState::RANGE {
-        let range = match eval_range(&items, env, scribe, evaluand) {
+        let range = match eval_range(&items, env, scribe) {
             Some(r) => { r }
             None => { return None; }
         };
@@ -275,10 +259,10 @@ fn desugar_association_pairs(
     Some(pairs)
 }
 
-fn eval_range(items: &Vec<Box<Expression>>, env: &mut Environment, scribe: &mut ErrorScribe, evaluand: bool) -> Option<Box<dyn Iterator<Item=i64>>> {
+fn eval_range(items: &Vec<Box<Expression>>, env: &mut Environment, scribe: &mut ErrorScribe) -> Option<Box<dyn Iterator<Item=i64>>> {
     if items.len() != 2 { return None; }
-    let lo = eval_expr(items.get(0).unwrap(), env, scribe, evaluand);
-    let hi = eval_expr(items.get(1).unwrap(), env, scribe, evaluand);
+    let lo = eval_expr(items.get(0).unwrap(), env, scribe);
+    let hi = eval_expr(items.get(1).unwrap(), env, scribe);
     return match (lo, hi) {
         (INTEGERVAL(i), INTEGERVAL(j)) => {
             if i > j { Some(Box::new((1 + j..1 + i).rev())) } else { Some(Box::new(i..j)) }

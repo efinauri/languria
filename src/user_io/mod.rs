@@ -100,7 +100,7 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
         }
     }
     let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();
-    let value = evaluate_expressions(&input_exprs, scribe, env, false, false);
+    let value = evaluate_expressions(&input_exprs, scribe, env, false);
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {

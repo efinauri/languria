@@ -106,9 +106,9 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&APPLICATION_EXPR {
+        assert!(expr.type_equals(&APPLIED_EXPR {
             arg: Box::new(NOTANEXPR),
-            op: Token::debug(NOTATOKEN),
+            op: NOTATOKEN,
             body: Box::new(NOTANEXPR),
         }));
     }

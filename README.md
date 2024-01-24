@@ -213,29 +213,42 @@ reversed_list = !!:[5..0]
 
 ### APPLICABLES
 
-An applicable is an expression that holds onto a piece of code with some placeholders, and that undergoes an additional evaluation phase, called application, if fed values through the operators `@` or `@@`.
-During an application, the applicable's body is evaluated with those values in place of the placeholders.
-```
-add_one = it + 1
-2 @ add_one == 3
-2 @ add_one @ add_one == 4 
-4 @ it^2 @ it/3 == 5 // if you chain applicables, they will be evaluated in reading order
-```
-Applicables have 3 default placeholders: `it`, `ti` and `idx`. During an application in which a single value fed to the applicable, `it` is the only placeholder needed.
+An applicable is an expression that holds onto a piece of code with some placeholders, 
+and that undergoes an additional evaluation phase, called application, if fed values through the operators `@` or `@@`.
 
-The situation where `ti` and `idx` play a role is a @@-application. Here, an association-style value is iteratively fed to the applicable, one key/value pair at a time.
-For each iteration, `it`/`ti` carry, respectively, the key/value, and `idx` holds the number of past iterations.
+During an application, the applicable's body is evaluated with those values in place of the placeholders.
+Below are some basic examples of normal @-applications.
+```
+add_one = |n| n + 1
+|2| @ add_one == 3
+|2| @ add_one == 2 @ add_one  // if the applicable needs to be fed only 1 value, the bars are optional.
+2 @ add_one @ add_one == 4 // you can chain applicables.
+|4| @ |n|(n ^ 2) @ |n|n / 3  // 5
+// careful about specifying the applicable's limits! without the parentheses, this is what would've been specified:
+|4| @ |n| n^(2 @ |n| n/3)  // 1
+
+
+```
+
+The operator `@@` is, instead, special in terms of its input, effect, receiver and output.
+- The input is an association, or anything that could otherwise be thought of as a collection of elements (currently only strings fit this second category).
+- The effect of this application on an expression is to evaluate the expression's body once for every element.
+- The body of the applicable, instead of requiring the named placeholders seen above, uses three built-in placeholders:
+`it` stores the key of the element, `ti` its value, and `idx` holds the number of past iterations.
 
 The value produced by such an application is the one produced by the last expression in the last iteration.
 ```
 assoc = [1: 2, 3: 4]
-assoc @@ $"\tposition n°{idx} of association is the pair ({it}, {ti})\n"
+assoc @@ ($"\tposition n°{idx} of association is the pair ({it}, {ti})\n")
 // the result of this application is the string "position n°1 of association is the pair (3, 4)"
+
+"hello" @@ it  == "o"
+"hello" @@ idx == 4
 ```
 When you store an unapplied expression into a variable, you can use that variable in the expression's body.
 ```
-countdown = [
-  it > 1: $(it - 1) @ countdown,
+countdown = |tick| [
+  tick > 1: |$(tick - 1)| @ countdown,
   _: 0
 ] |>> true
 
@@ -252,9 +265,12 @@ ok_or = |opt, default| [opt?!: opt|>, _: default] |>> true
 
 map_val = |assoc, fn_val| {
     new_assoc = []
-    assoc @@ new_assoc << |ti, it @ fn_val|
+    assoc @@ {
+        new_assoc << |ti, it @ fn_val|
+    }
     new_assoc
 }
-|:[1..6], it^2| @ map_val  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
+
+|:[1..6], (|n|n^2)| @ map_val  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
 ```
 Note that in this case you don't have access to the default placeholders, and you need to stick to the calling syntax `|arguments| @ applicable`.

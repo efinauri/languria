@@ -43,7 +43,7 @@ mod tests {
         let v = evaluate_expressions(
             &vec![],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
     }
 
@@ -64,7 +64,7 @@ mod tests {
                 })
             ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("s"))
@@ -87,7 +87,7 @@ mod tests {
                 })
             ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_eq!(v, yes_val(int_val(2)));
         assert_ne!(v, str_val("r"))
@@ -107,7 +107,7 @@ mod tests {
                 ))
             ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_eq!(v, int_val(2));
         assert_ne!(v, str_val("s"))
@@ -119,17 +119,21 @@ mod tests {
         let mut env = Environment::new();
         let v = evaluate_expressions(
             &vec![
-                Box::new(APPLICATION_EXPR {
+                Box::new(APPLIED_EXPR {
                     arg: int_expr(2),
-                    op: Token::debug(AT),
-                    body: Box::new(BINARY {
-                        lhs: str_expr("s"),
-                        op: Token::debug(MUL),
-                        rhs: Box::new(LITERAL(Token::debug(IT))),
+                    op: AT,
+                    body: Box::new(APPLICABLE_EXPR {
+                        params: Box::new(ARGS(vec![Box::new(VAR_RAW("n".to_string()))])),
+                        body: Box::new(BINARY {
+                            lhs: Box::new(VAR_RAW("n".parse().unwrap())),
+                            op: Token::debug(MUL),
+                            rhs: str_expr("s"),
+                        }),
                     }),
-                })],
+                })
+            ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_ne!(v, int_val(2));
         assert_eq!(v, str_val("ss"))
@@ -147,7 +151,7 @@ mod tests {
                 }),
             ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_ne!(v, int_val(2));
         assert_eq!(v, BOOLEANVAL(false))
@@ -180,7 +184,7 @@ mod tests {
                             )
                         ],
                         &mut es,
-                        &mut env, false, false);
+                        &mut env, false);
                     dbg!(&v);
                     assert_eq!(v, BOOLEANVAL(op(lhs, rhs)))
                 }
@@ -221,7 +225,7 @@ mod tests {
                         )
                     ],
                     &mut es,
-                    &mut env, false, false);
+                    &mut env, false);
                 dbg!(a, &tok, b, &v);
                 assert_eq!(v, INTEGERVAL(op(a, b)))
             }
@@ -263,7 +267,7 @@ mod tests {
                         )
                     ],
                     &mut es,
-                    &mut env, false, false);
+                    &mut env, false);
                 dbg!(&v);
                 assert_eq!(v, BOOLEANVAL(op(a, b)))
             }
@@ -284,7 +288,7 @@ mod tests {
                 str_expr("x={x}{x}"),
             ],
             &mut es,
-            &mut env, false, false);
+            &mut env, false);
         dbg!(&v);
         assert_eq!(v, str_val("x=22"))
     }

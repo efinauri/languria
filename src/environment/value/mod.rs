@@ -18,7 +18,7 @@ pub enum Value {
     FLOATVAL(f64),
     STRINGVAL(String),
     BOOLEANVAL(bool),
-    LAMBDAVAL(Box<Expression>),
+    LAMBDAVAL { params: Box<Expression>, body: Box<Expression> },
     OPTIONVAL(Option<Box<Self>>),
     ASSOCIATIONVAL(ValueMap),
     RETURNVAL(Box<Self>),
@@ -76,12 +76,14 @@ impl Eq for Value {}
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => i == j,
-            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
-            => { (*i as f64) == *j }
-            (FLOATVAL(i), FLOATVAL(j)) => i == j,
             (STRINGVAL(i), STRINGVAL(j)) => i == j,
             (BOOLEANVAL(i), BOOLEANVAL(j)) => i == j,
+            (INTEGERVAL(i), INTEGERVAL(j)) => i == j,
+            (FLOATVAL(i), FLOATVAL(j)) => i == j,
+
+            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
+            => { (*i as f64) == *j }
+
             (OPTIONVAL(i), OPTIONVAL(j)) => {
                 match (i, j) {
                     (None, None) => { true }
@@ -97,8 +99,8 @@ impl PartialEq for Value {
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
-            => { j.partial_cmp(&(*i as f64)) }
+            (INTEGERVAL(i), FLOATVAL(j)) => { Some((*i as f64).total_cmp(j)) }
+            (FLOATVAL(j), INTEGERVAL(i)) => { Some(j.total_cmp(&(*i as f64))) }
             (INTEGERVAL(i), INTEGERVAL(j)) => Some(i.cmp(j)),
             (FLOATVAL(i), FLOATVAL(j)) => {
                 if i > j { return Some(Ordering::Greater); } else if i < j { return Some(Ordering::Less); }
@@ -144,7 +146,7 @@ impl Value {
             FLOATVAL(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
             STRINGVAL(str) => { f.write_str(&*format!("\"{}\"", str)) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
-            LAMBDAVAL(_) => { f.write_str("applicable") }
+            LAMBDAVAL { .. } => { f.write_str("applicable") }
             ASSOCIATIONVAL(map) => {
                 let mut str = map.map.iter()
                     .map(|(k, v)| format!("{}: {}, ", k, v))
@@ -174,7 +176,7 @@ impl Value {
             (STRINGVAL(_), STRINGVAL(_)) |
             (BOOLEANVAL(_), BOOLEANVAL(_)) |
             (ERRVAL, ERRVAL) |
-            (LAMBDAVAL(_), LAMBDAVAL(_)) |
+            (LAMBDAVAL { .. }, LAMBDAVAL { .. }) |
             (NOTAVAL, NOTAVAL) => { true }
             (_, _) => false
         }
@@ -182,6 +184,7 @@ impl Value {
 
     pub fn as_bool_val(&self) -> Value {
         return match self {
+            RETURNVAL(val) => val.as_bool_val(),
             BOOLEANVAL(bool) => BOOLEANVAL(*bool),
             INTEGERVAL(int) => BOOLEANVAL(*int > 0),
             FLOATVAL(flt) => BOOLEANVAL(flt.is_sign_positive()),
