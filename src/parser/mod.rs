@@ -1,9 +1,10 @@
+use std::collections::VecDeque;
 use std::vec;
 
 use crate::{Cursor, WalksCollection};
 use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::{Token, TokenType};
+use crate::lexer::{Coord, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
 
@@ -18,19 +19,19 @@ pub enum Expression {
     LOGIC { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
     GROUPING(Box<Expression>),
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
-    VAR_RAW(String),
+    VAR_RAW(Coord, String),
     BLOCK(Vec<Box<Expression>>),
-    APPLIED_EXPR { arg: Box<Expression>, op: TokenType, body: Box<Expression> },
+    APPLIED_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>),
     LIST_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
     SET_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
-    PULL_EXPR { source: Box<Expression>, op: TokenType, key: Box<Expression> },
+    PULL_EXPR { source: Box<Expression>, op: Token, key: Box<Expression> },
     PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
     APPLICABLE_EXPR { params: Box<Expression>, body: Box<Expression> },
     OPTION_EXPR(Box<Expression>),
-    UNDERSCORE_EXPR,
+    UNDERSCORE_EXPR(Coord),
 
     NOTANEXPR,
     // when an expr is desugared into a bigger one this is a way to evaluate once, and carry around,
@@ -39,6 +40,52 @@ pub enum Expression {
 }
 
 impl Expression {
+    pub fn coord(&self) -> &Coord {
+        match self {
+            LITERAL(tok) => &tok.coord,
+
+            APPLIED_EXPR { op, .. } |
+            PULL_EXPR { op, .. } |
+            VAR_ASSIGN { op, .. } |
+            BINARY { op, .. } |
+            LOGIC { op, .. } |
+            UNARY { op, .. } => &op.coord,
+
+            UNDERSCORE_EXPR(coord) |
+            VAR_RAW(coord, _) => &coord,
+
+            ARGS(exprs) |
+            BLOCK(exprs) => exprs.first().map(|ex|ex.coord()).unwrap_or(&Coord::zero()),
+
+            APPLICABLE_EXPR { params: expr, .. } |
+            PUSH_EXPR { obj: expr, .. } |
+            GROUPING(expr) |
+            OPTION_EXPR(expr) |
+            RETURN_EXPR(expr) => expr.coord(),
+
+            ASSOCIATION_EXPR(v) => v.first().map(|(ex,_)| ex.coord()).unwrap_or(&Coord::zero()),
+
+            LIST_DECLARATION_EXPR { .. } |
+            SET_DECLARATION_EXPR { .. } |
+            VALUE_WRAPPER(_) |
+            NOTANEXPR => &Coord::zero(),
+
+        }
+    }
+
+    pub fn last_instruction(&self) -> &Expression {
+        match self {
+            RETURN_EXPR(e) => e.last_instruction(),
+            BLOCK(exprs) => exprs.last().map(|e|e.last_instruction()).unwrap_or(self),
+            _=> self
+        }
+    }
+
+    pub fn is_tail_call_optimizable(&self) -> bool {
+        if let APPLIED_EXPR {..} = self.last_instruction() { return true; }
+        false
+    }
+
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
             (RETURN_EXPR(expr), other) => {
@@ -56,12 +103,12 @@ impl Expression {
             (LOGIC { .. }, LOGIC { .. }) |
             (GROUPING(_), GROUPING(_)) |
             (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
-            (VAR_RAW(_), VAR_RAW(_)) |
+            (VAR_RAW(_,_), VAR_RAW(_,_)) |
             (APPLIED_EXPR { .. }, APPLIED_EXPR { .. }) |
             (ASSOCIATION_EXPR(_), ASSOCIATION_EXPR(_)) |
             (PULL_EXPR { .. }, PULL_EXPR { .. }) |
             (PUSH_EXPR { .. }, PUSH_EXPR { .. }) |
-            (UNDERSCORE_EXPR, UNDERSCORE_EXPR) |
+            (UNDERSCORE_EXPR(..), UNDERSCORE_EXPR(..)) |
             (NOTANEXPR, NOTANEXPR) => true,
             (_, _) => false
         }
@@ -96,7 +143,7 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: Cursor,
     scribe: &'a mut ErrorScribe,
-    exprs: Vec<Expression>,
+    exprs: VecDeque<Expression>,
 }
 
 impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
@@ -106,24 +153,24 @@ impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
 }
 
 impl Parser<'_> {
-    pub fn into_expressions(self) -> Vec<Expression> { self.exprs }
+    pub fn into_expressions(self) -> VecDeque<Expression> { self.exprs }
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser { tokens, cursor: Cursor::new(), scribe, exprs: vec![] }
+        Parser { tokens, cursor: Cursor::new(), scribe, exprs: VecDeque::new() }
     }
 
     pub fn parse(&mut self) {
         if self.tokens.is_empty() { return; }
         while self.can_consume() {
             let expr = self.build_expression();
-            self.exprs.push(expr);
+            self.exprs.push_back(expr);
         }
     }
 
     ///cursor will be after the built expression.
     fn build_expression(&mut self) -> Expression {
         if !self.can_consume() {
-            self.scribe.annotate_error(Error::on_line(
-                if self.tokens.is_empty() { 0 } else { self.read_prev().line },
+            self.scribe.annotate_error(Error::on_coord(
+                if self.tokens.is_empty() { &Coord::zero() } else { &self.read_prev().coord },
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
@@ -136,7 +183,7 @@ impl Parser<'_> {
             self.cursor.step_fwd();
             expr = PULL_EXPR {
                 source: Box::new(expr),
-                op: self.read_prev().ttype.clone(),
+                op: self.read_prev().clone(),
                 key: Box::new(self.build_expression()),
             }
         }
@@ -273,7 +320,7 @@ impl Parser<'_> {
             self.cursor.step_fwd();
             expr = APPLIED_EXPR {
                 arg: Box::new(expr),
-                op: self.read_prev().ttype.clone(),
+                op: self.read_prev().clone(),
                 body: Box::new(self.primary()),
             }
         }
@@ -283,13 +330,13 @@ impl Parser<'_> {
 
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
-            self.scribe.annotate_error(Error::on_line(
-                if self.tokens.is_empty() { 0 } else { self.read_prev().line },
+            self.scribe.annotate_error(Error::on_coord(
+                if self.tokens.is_empty() { &Coord::zero() } else { &self.read_prev().coord },
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
-        let ttype = &self.tokens.get(self.cursor.get()).unwrap().ttype.clone();
-        return match ttype {
+        let tok = &self.tokens.get(self.cursor.get()).unwrap().clone();
+        return match &tok.ttype {
             LIST => {
                 self.cursor.step_fwd();
                 self.build_association_declaration(true)
@@ -303,7 +350,7 @@ impl Parser<'_> {
                 OPTION_EXPR(Box::new(self.primary()))
             }
             LBRACKET => { self.process_association() }
-            IDENTIFIER(str) => { self.process_assignment(str) }
+            IDENTIFIER(str) => { self.process_assignment(&str) }
             LBRACE => { self.process_code_block() }
             RETURN => {
                 self.cursor.step_fwd();
@@ -320,7 +367,7 @@ impl Parser<'_> {
             }
             UNDERSCORE => {
                 self.cursor.step_fwd();
-                UNDERSCORE_EXPR
+                UNDERSCORE_EXPR(tok.coord.clone())
             }
             IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
@@ -335,8 +382,8 @@ impl Parser<'_> {
                 GROUPING(Box::new(expr))
             }
             _ => {
-                self.scribe.annotate_error(Error::on_line(
-                    self.read_curr().line, ErrorType::PARSER_UNEXPECTED_TOKEN(ttype.clone())));
+                self.scribe.annotate_error(Error::on_coord(
+                    &tok.coord, ErrorType::PARSER_UNEXPECTED_TOKEN(tok.ttype.clone())));
                 self.cursor.step_fwd();
                 NOTANEXPR
             }
@@ -369,7 +416,7 @@ impl Parser<'_> {
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
             let expr = self.build_expression();
             if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
-            self.exprs.push(expr.clone());
+            self.exprs.push_back(expr.clone());
             exprs.push(Box::new(expr));
         }
         self.assert_curr_is(RBRACE);
@@ -393,14 +440,14 @@ impl Parser<'_> {
                 }
             } else { unreachable!() };
         }
-        VAR_RAW(str.clone())
+        VAR_RAW(self.read_curr().coord.clone(), str.clone())
     }
 
 
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
         if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
-            self.scribe.annotate_error(Error::on_line(
-                self.try_read_curr().map(|tok| tok.line).unwrap_or(0),
+            self.scribe.annotate_error(Error::on_coord(
+                self.try_read_curr().map(|tok| &tok.coord).unwrap_or(&Coord::new()),
                 ErrorType::PARSER_EXPECTED_TOKEN(ttype)));
             return false;
         }

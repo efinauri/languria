@@ -10,7 +10,7 @@ use crate::{lexer, parser};
 use crate::environment::Environment;
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
-use crate::evaluator::evaluate_expressions;
+use crate::evaluator::Evaluator;
 
 pub fn interpret_file(filename: &str, verbose: bool) {
     let path = Path::new(filename);
@@ -86,9 +86,11 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
         println!("produced following tokens: ");
         tokens.iter().for_each(|tok| println!("{}", tok));
     }
+
+
     let mut parser = parser::Parser::from_tokens(tokens.to_owned(), scribe);
     parser.parse();
-    let exprs = parser.into_expressions();
+    let mut exprs = parser.into_expressions();
     if scribe.has_errors() || exprs.is_empty() {
         scribe.clear_errors();
         return;
@@ -99,8 +101,13 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
             println!("{:#?}", ex);
         }
     }
-    let input_exprs = exprs.iter().map(|ex| Box::new(ex.clone())).collect();
-    let value = evaluate_expressions(&input_exprs, scribe, env, false);
+    // let input_exprs = exprs.iter()
+    //     .map(|ex| Box::new(ex.clone()))
+    //     .collect();
+
+
+    let mut evaluator = Evaluator::from_parser(&mut exprs, scribe, env);
+    let value = evaluator.value();
     if verbose {
         println!("and evaluated as:\n{:?}", &value)
     } else {
@@ -109,7 +116,7 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
     }
 }
 
-pub(crate) trait Red { fn red(&self) -> Self; }
+pub trait Red { fn red(&self) -> Self; }
 
 impl Red for String {
     fn red(&self) -> Self { format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m") }

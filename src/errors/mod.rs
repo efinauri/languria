@@ -3,7 +3,7 @@ use std::io::{stdout, Write};
 use std::process::exit;
 
 use crate::environment::value::Value;
-use crate::lexer::TokenType;
+use crate::lexer::{Coord, TokenType};
 use crate::user_io::Red;
 
 #[derive(PartialEq, Debug)]
@@ -83,17 +83,17 @@ pub enum ErrorType {
 #[derive(Debug)]
 pub struct Error {
     etype: ErrorType,
-    line: usize,
+    coord: Coord,
 }
 
 impl Error {
-    pub fn on_line(line: usize, etype: ErrorType) -> Error {
+    pub fn on_coord(coord: &Coord, etype: ErrorType) -> Error {
         Error {
             etype,
-            line,
+            coord: coord.clone(),
         }
     }
-    fn err_location(&self) -> String { format!("[line #{}] ", self.line) }
+    fn err_location(&self) -> String { format!("[{}:{}] ", self.coord.row, self.coord.column) }
 }
 
 impl Display for Error {

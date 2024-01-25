@@ -2,6 +2,7 @@ use std::env;
 use languria::user_io::{interpret_file, serve_repl};
 
 fn main() {
+    unsafe { backtrace_on_stack_overflow::enable() };
     let args: Vec<String> = env::args().collect();
     match args.len() {
         0..=1 => { serve_repl() }

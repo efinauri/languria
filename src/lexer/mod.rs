@@ -105,20 +105,37 @@ lazy_static! {
 ]);
 }
 
+const ZERO_COORD: Coord = Coord { row: 0, column: 0 };
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Coord {
+    pub row: usize,
+    pub column: usize,
+}
+
+impl Coord {
+    pub fn zero() -> &'static Coord {&ZERO_COORD}
+}
+
+impl Coord {
+    pub fn new() -> Coord { Coord { row: 0, column: 0 } }
+    pub fn from(row: usize, column: usize) -> Coord { Coord{ row, column }}
+}
+
 #[derive(PartialEq, Clone)]
 pub struct Token {
     pub ttype: TokenType,
-    pub(crate) line: usize,
+    pub coord: Coord,
 }
 
 
 impl Token {
     #[allow(dead_code)]
     pub fn debug(ttype: TokenType) -> Token {
-        Token { ttype, line: 0 }
+        Token { ttype, coord: Coord::new() }
     }
 
-    pub fn new(ttype: TokenType, line: usize) -> Token { Token { ttype, line } }
+    pub fn new(ttype: TokenType, row: usize, column: usize) -> Token { Token { ttype, coord: Coord { row, column } } }
 
     pub fn type_equals(&self, other: &TokenType) -> bool {
         return match (&self.ttype, other) {
@@ -144,7 +161,8 @@ impl Debug for Token {
 pub struct Lexer<'a> {
     source: Vec<char>,
     tokens: Vec<Token>,
-    line_number: usize,
+    current_row: usize,
+    current_column: usize,
     cursor: Cursor,
     scribe: &'a mut ErrorScribe,
 }
@@ -158,7 +176,7 @@ impl WalksCollection<'_, Vec<char>, char> for Lexer<'_> {
 impl Debug for Lexer<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(&*format!("source: {:?}\nc: {}, line: {}\ntoks: {:?}",
-                              self.source, self.cursor, self.line_number, self.tokens))
+                              self.source, self.cursor, self.current_row, self.tokens))
     }
 }
 
@@ -168,7 +186,8 @@ impl<'a> Lexer<'_> {
             source: s.chars().collect(),
             cursor: Cursor::new(),
             tokens: vec![],
-            line_number: 1,
+            current_row: 1,
+            current_column: 1,
             scribe,
         }
     }
@@ -176,7 +195,7 @@ impl<'a> Lexer<'_> {
     fn consume_seq_if_eq(&mut self, seq: &str) -> bool {
         if !self.can_peek(seq.len()) { return false; }
         for (ch, i) in seq.chars().zip(0..) {
-            if self.peek(i) != &ch { return false }
+            if self.peek(i) != &ch { return false; }
         }
         self.cursor.mov(seq.len() as i32);
         true
@@ -253,14 +272,15 @@ impl<'a> Lexer<'_> {
                 }
                 '\n' => {
                     self.scribe.annotate_error(
-                        Error::on_line(self.line_number, ErrorType::LEXER_BAD_STR_FMT));
-                    self.line_number += 1;
+                        Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
+                    self.current_row += 1;
+                    self.current_column = 1;
                     return STRING(str);
                 }
                 _ => {
                     if !self.can_consume() {
                         self.scribe.annotate_error(
-                            Error::on_line(self.line_number, ErrorType::LEXER_BAD_STR_FMT));
+                            Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
                     }
                 }
             }
@@ -272,10 +292,12 @@ impl<'a> Lexer<'_> {
     pub fn produce_tokens(&mut self) -> &Vec<Token> {
         while self.can_consume() {
             let symbol = self.consume().clone();
+            self.current_column += 1;
             let ttyp = match symbol {
                 ' ' | '\r' | '\t' => continue,
                 '\n' => {
-                    self.line_number += 1;
+                    self.current_row += 1;
+                    self.current_column = 1;
                     continue;
                 }
                 ':' => if self.consume_next_if_eq('[') { LIST } else { COLON },
@@ -340,9 +362,9 @@ impl<'a> Lexer<'_> {
             };
             if ttyp == NOTATOKEN {
                 self.scribe.annotate_error(
-                    Error::on_line(self.line_number, ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
+                    Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
             }
-            self.tokens.push(Token::new(ttyp, self.line_number));
+            self.tokens.push(Token::new(ttyp, self.current_row, self.current_column));
         }
         self.scribe.enact_termination_policy();
         if self.tokens.iter()

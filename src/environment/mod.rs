@@ -4,36 +4,45 @@ use value::Value;
 use value::Value::*;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::Token;
+use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
 
 pub(crate) mod value;
 
 pub struct Environment {
-    scopes: Vec<Scope>,
-    pub curr_line: usize,
+    pub(crate) scopes: Vec<Scope>,
     last_print_line: usize,
+    pub(crate) coord: Coord,
 }
 
 impl Environment {
     pub fn new() -> Environment {
         Environment {
             scopes: vec![Scope::new()],
-            curr_line: 0,
             last_print_line: 0,
+            coord: Coord { row: 0, column: 0 },
         }
     }
 
     pub fn create_scope(&mut self) {
-        let scope = Scope::new();
+        println!("create [{}:{}] scopes:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        let mut scope = Scope::new();
+        scope.coord = self.coord.clone();
         self.scopes.push(scope);
+        // dbg!(&self.scopes);
     }
-    pub fn destroy_scope(&mut self) { if self.scopes.len() > 1 { self.scopes.pop(); } }
+
+    pub fn destroy_scope(&mut self) {
+        println!("\tdestroy [{}:{}] scopes:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        if self.scopes.len() > 1 { self.scopes.pop(); }
+    }
+
     pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
 
 
     pub fn try_read(&self, varname: &String) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
+            // dbg!(i, &scope.variables.len());
             if let Some(val) = scope.variables.get(varname) { return Some(val); }
         }
         None
@@ -42,10 +51,11 @@ impl Environment {
     pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
         match self.try_read(varname) {
             Some(value) => {
-                value }
+                value
+            }
             None => {
-                scribe.annotate_error(Error::on_line(self.curr_line,
-                                                     ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
+                scribe.annotate_error(Error::on_coord(&self.coord,
+                                                      ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
                 &ERRVAL
             }
         }
@@ -62,7 +72,7 @@ impl Environment {
     }
 
     pub fn write_binding(&mut self, varname: &String, varval: &Value) -> Value {
-        self.write(varname, varval, &Token::new(ASSIGN, self.curr_line))
+        self.write(varname, varval, &Token::new(ASSIGN, 0, 0))
     }
 }
 
@@ -70,6 +80,7 @@ impl Environment {
 pub struct Scope {
     variables: HashMap<String, Value>,
     entry_point: String,
+    coord: Coord,
 }
 
 impl Scope {
@@ -77,6 +88,7 @@ impl Scope {
         Scope {
             variables: Default::default(),
             entry_point: String::from("REPL"),
+            coord: Coord::new(),
         }
     }
 
