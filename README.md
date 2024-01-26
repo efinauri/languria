@@ -81,9 +81,10 @@ To remedy this, you can also tag any of your print statements as such.
 ```
 $math = $<a>(3 * 3) + $<b>(4 * 4)  // prints "a: 9 b: 16 25"
 ```
-`$$` prints the current location of the line.
+`$$` prints the current location of the line. Note that everything is a value, including `$$`!
 ```
 $$ $3  // [test.lgr:4] 3
+$$ * 2  // not only this prints [REPL:1], but it also evaluates to [REPL:1][REPL:1]
 ```
 
 ## TYPES

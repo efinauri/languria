@@ -11,7 +11,7 @@ pub(crate) mod value;
 
 pub struct Environment {
     pub(crate) scopes: Vec<Scope>,
-    last_print_line: usize,
+    pub(crate) last_print_line: usize,
     pub(crate) coord: Coord,
 }
 
@@ -79,7 +79,7 @@ impl Environment {
 #[derive(Debug)]
 pub struct Scope {
     variables: HashMap<String, Value>,
-    entry_point: String,
+    pub(crate) entry_point: String,
     coord: Coord,
 }
 
@@ -117,12 +117,4 @@ impl Scope {
         self.variables.insert(varname.clone(), val_to_write.clone());
         val_to_write.clone()
     }
-}
-
-pub fn print_eol(env: &mut Environment, line: &usize) -> Value {
-    let start_new_line = env.last_print_line != *line;
-    env.last_print_line = *line;
-    let to_print = format!("[{}:{}]", env.curr_scope().entry_point, line);
-    if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
-    NOTAVAL
 }

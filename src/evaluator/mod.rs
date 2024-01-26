@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
+use log::error;
+
 use crate::environment::Environment;
+use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
-use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::OperationStatus::*;
 use crate::evaluator::OperationType::*;
@@ -14,6 +16,7 @@ use crate::parser::Expression;
 mod tests;
 mod lib;
 
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 enum OperationType {
     BINARY_OP(Token),
@@ -22,20 +25,49 @@ enum OperationType {
     LOGIC_OP(Token),
     UNARY_OP(Token),
     VARASSIGN_OP(String, Token),
+    SCOPE_CLEANUP_OP(usize),
+    RETURN_CLEANUP,
+    ASSOC_GROWER_OP(ValueMap, usize, bool),
+    PULL_OP(Token),
+    APPLICATION_OP(Token, usize),
+    APPLICATION_CLEANUP(usize),
 }
 
+#[derive(Debug)]
 struct Operation {
     needed_values: usize,
-    available_values: usize,
+    seen_values: usize,
     otype: OperationType,
 }
 
 impl Operation {
+    /// removes the operation's pending state. used when the operation is popped from the queue
+    /// without being normally executed.
+    fn flush(&self,
+             vals: &mut VecDeque<Value>,
+             ops: &mut VecDeque<Operation>,
+             exprs: &mut &mut VecDeque<Expression>,
+             env: &mut Environment,
+    ) {
+        //usually an operation keeps every value it sees because it needs them all to make sense,
+        // but in other situations this is not necessary.
+        let kept_values = match self.otype {
+            SCOPE_CLEANUP_OP(_) => 0,
+            _ => self.seen_values
+        };
+        // trim values calculated for its future execution.
+        vals.truncate(vals.len() - kept_values);
+        // trim expression that would've calculated the rest of the needed values.
+        // +1 because the expr that caused the early dropping was part of the scope.
+        exprs.truncate(exprs.len() + 1 + self.seen_values - self.needed_values);
+    }
+
+
     pub fn value(&self,
                  vals: &mut VecDeque<Value>,
                  ops: &mut VecDeque<Operation>,
                  exprs: &mut &mut VecDeque<Expression>,
-                 env: &mut Environment
+                 env: &mut Environment,
     ) -> Value {
         match &self.otype {
             BINARY_OP(tok) => {
@@ -93,12 +125,85 @@ impl Operation {
                     ASBOOL => { val.as_bool_val() }
                     NOT => { val.not_it() }
                     MINUS => { val.minus_it() }
-                    DOLLAR => { /*TODO val.print_it();*/ val.clone()}
-                    _=> ERRVAL
+                    DOLLAR => { /*TODO val.print_it();*/ val.clone() }
+                    _ => ERRVAL
                 }
             }
             VARASSIGN_OP(varname, op) => {
                 env.write(varname, &vals.pop_back().unwrap(), op)
+            }
+            SCOPE_CLEANUP_OP(_) => {
+                env.destroy_scope();
+                vals.pop_back().unwrap()
+            }
+            RETURN_CLEANUP => {
+                let return_val = vals.pop_back().unwrap();
+                while let Some(op) = ops.pop_back() {
+                    op.flush(vals, ops, exprs, env);
+                    if let SCOPE_CLEANUP_OP(_) = op.otype { break; }
+                }
+                env.destroy_scope();
+                return_val
+            }
+            ASSOC_GROWER_OP(map, n, lazy) => {
+                let mut map = map.to_owned();
+                let k = vals.pop_back().unwrap();
+                if *lazy {
+                    let v = LAZYVAL(Box::from(exprs.pop_back().unwrap()));
+                    if k.type_equals(&UNDERSCOREVAL) {
+                        map.default = Some(Box::from(v.to_owned()));
+                    } else { map.insert(k, v); }
+                }
+                if *n == 1 {
+                    return ASSOCIATIONVAL(map);
+                }
+                ops.push_back(Operation::from_type(ASSOC_GROWER_OP(map, n - 1, *lazy)));
+                NOTAVAL
+            }
+            PULL_OP(tok) => {
+                let key = vals.pop_back().unwrap();
+                let source = vals.pop_back().unwrap();
+                return match source {
+                    ASSOCIATIONVAL(map) => {
+                        // try to read key, if absent try to grab default
+                        let val = map.get(&key).or(
+                            map.default.as_deref().map(|v| v.clone())
+                        );
+                        let val = match (&tok.ttype, val) {
+                            (PULL, Some(v)) => { v }
+                            (PULLEXTRACT, Some(v)) => { v }
+                            (PULL, None) => { OPTIONVAL(None) }
+                            _ => ERRVAL
+                        };
+                        if let LAZYVAL(expr) = val {
+                            exprs.push_back(*expr);
+                            if &tok.ttype == &PULL { ops.push_back(Operation::from_type(OPTIONAL_OP)) }
+                            NOTAVAL
+                        } else { val }
+                    }
+                    _ => ERRVAL
+                };
+            }
+            APPLICATION_OP(_, _) => {
+                // | args | @ lambdaval, where lambdaval has params and actual body)
+                env.create_scope();
+                // body must contain lambda
+                let lambda_contents = if let Expression::APPLICABLE_EXPR { params, body } = exprs.back().unwrap() {
+                    (params.deref().clone(), body.deref().clone())
+                } else { return ERRVAL; };
+                let params = if let Expression::ARGS(params) = lambda_contents.0 { params } else { unreachable!() };
+                for param in params {
+                    if let Expression::VAR_RAW(_, varname) = *param {
+                        env.write_binding(&varname, &vals.pop_back().unwrap());
+                    } else { return ERRVAL; }
+                }
+                NOTAVAL
+            }
+            APPLICATION_CLEANUP(_) => {
+                if let LAMBDAVAL { params, body } = vals.pop_back().unwrap() {
+                    exprs.push_back(*body);
+                };
+                NOTAVAL
             }
         }
     }
@@ -113,10 +218,16 @@ impl Operation {
             LOGIC_OP(_) => 2,
             UNARY_OP(_) => 1,
             VARASSIGN_OP(_, _) => 1,
+            SCOPE_CLEANUP_OP(n) => *n,
+            RETURN_CLEANUP => 1,
+            ASSOC_GROWER_OP(_, _, _) => 1,
+            PULL_OP(_) => 2,
+            APPLICATION_OP(_, n) => *n,
+            APPLICATION_CLEANUP(_) => 1,
         };
 
         Operation {
-            available_values: 0,
+            seen_values: 0,
             otype,
             needed_values,
         }
@@ -152,7 +263,7 @@ impl<'a> Evaluator<'a> {
 
     fn op_status(&self) -> OperationStatus {
         if let Some(op) = self.op_queue.back() {
-            if op.available_values == op.needed_values { READY } else { WAITING }
+            if op.seen_values == op.needed_values { READY } else { WAITING }
         } else { NOOP }
     }
 
@@ -162,17 +273,14 @@ impl<'a> Evaluator<'a> {
         ERRVAL
     }
 
-    // fn eval_expr(expr: &Expression, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
     pub fn value(&mut self) -> Value {
+        env_logger::init();
         let mut ret = NOTAVAL;
+        dbg!(&self.exp_queue);
         while let Some(expr) = self.exp_queue.pop_back() {
-            if let Expression::VAR_RAW(_, varname) = expr {
-                ret = self.env.read(&varname, self.scribe).clone();
-                continue;
-            }
-
             ret = match expr {
-                Expression::VAR_RAW(_, _) | Expression::ARGS(_) | Expression::UNDERSCORE_EXPR(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
+                Expression::VAR_RAW(_, varname) => { self.env.read(&varname, self.scribe).clone() }
+                Expression::ARGS(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
                 Expression::APPLICABLE_EXPR { params: arg, body } => { LAMBDAVAL { params: arg.clone(), body: body.clone() } }
                 Expression::NOTANEXPR => { self.error(ErrorType::EVAL_INVALID_EXPR) }
                 Expression::VALUE_WRAPPER(val) => val.deref().clone(),
@@ -211,34 +319,63 @@ impl<'a> Evaluator<'a> {
 //                     let source = eval_expr(source, env, scribe);
 //                     lib::eval_pull(field, op, source, env, scribe)
 //                 }
-//                 Expression::ASSOCIATION_EXPR(pairs) => { lib::eval_association(pairs, true, env, scribe) }
-//                 Expression::RETURN_EXPR(expr) => { RETURNVAL(Box::new(eval_expr(expr, env, scribe))) }
 //                 Expression::APPLIED_EXPR { arg, op, body } => {
 //                     lib::eval_application(arg, op, body, env, scribe)
 //                 }
-//                 Expression::BLOCK(exprs) => {
-//                     evaluate_expressions(exprs, scribe, env, true)
-//                 }
+                Expression::APPLIED_EXPR { arg, op, body } => {
+                    let mut args_size = 1;
+                    self.exp_queue.push_back(*body);
+                    if let Expression::ARGS(exprs) = arg.deref() {
+                        args_size = exprs.len();
+                        for ex in exprs.iter().rev() {
+                            self.exp_queue.push_back(*ex.to_owned());
+                        }
+                    } else { self.exp_queue.push_back(*arg) }
+                    self.op_queue.push_back(Operation::from_type(APPLICATION_CLEANUP(args_size + 1)));
+                    self.op_queue.push_back(Operation::from_type(APPLICATION_OP(op, args_size)));
+                    NOTAVAL
+                }
+                Expression::PULL_EXPR { source, op, key } => {
+                    self.exp_queue.push_back(*key);
+                    self.exp_queue.push_back(*source);
+                    self.op_queue.push_back(Operation::from_type(PULL_OP(op)));
+                    NOTAVAL
+                }
+                Expression::ASSOCIATION_EXPR(pairs) => { lib::eval_association(self, pairs, true) }
+                Expression::RETURN_EXPR(expr) => {
+                    self.exp_queue.push_back(*expr);
+                    self.op_queue.push_back(Operation::from_type(RETURN_CLEANUP));
+                    NOTAVAL
+                }
+                Expression::BLOCK(exprs) => {
+                    self.env.create_scope();
+                    self.op_queue.push_back(Operation::from_type(SCOPE_CLEANUP_OP(exprs.len())));
+                    for ex in exprs.iter().rev() {
+                        self.exp_queue.push_back(*ex.clone());
+                    }
+                    NOTAVAL
+                }
                 Expression::GROUPING(expr) => {
                     self.exp_queue.push_back(*expr);
                     NOTAVAL
                 }
-                Expression::VAR_ASSIGN {varname, op, varval} => {
+                Expression::VAR_ASSIGN { varname, op, varval } => {
                     self.exp_queue.push_back(*varval);
                     self.op_queue.push_back(Operation::from_type(VARASSIGN_OP(varname, op)));
                     NOTAVAL
                 }
+                Expression::UNDERSCORE_EXPR(_) => UNDERSCOREVAL,
                 Expression::LITERAL(value) => {
                     match &value.ttype {
-                        // EOLPRINT => print_eol(env, &value.coord.row),
+                        EOLPRINT => { self.eolprint(&value) }
                         FALSE => BOOLEANVAL(false),
                         TRUE => BOOLEANVAL(true),
-                        // STRING(str) => STRINGVAL(lib::replace_string_placeholders(str, env, scribe)),
+                        STRING(str) => STRINGVAL(self.replace_string_placeholders(str)),
                         INTEGER(int) => INTEGERVAL(*int),
                         FLOAT(flt) => FLOATVAL(*flt),
-                        IT => { self.read_var("it".to_string()) }
-                        TI => { self.read_var("ti".to_string()) }
-                        IDX => { self.read_var("idx".to_string()) }
+                        IT => { self.read_var(&"it".to_string()) }
+                        TI => { self.read_var(&"ti".to_string()) }
+                        IDX => { self.read_var(&"idx".to_string()) }
                         _ => { self.error(ErrorType::EVAL_INVALID_LITERAL) }
                     }
                 }
@@ -259,7 +396,7 @@ impl<'a> Evaluator<'a> {
 //                             }
 //                             _ => {
 //                                 scribe.annotate_error(Error::on_coord(&env.coord,
-//                                                                       ErrorType::EVAL_INVALID_OP(BANGBANG, vec![NOTAVAL])));
+//                                                                       ErrorType::EVAL_INVALID_OP(BANGBANG, vec![continue;])));
 //                                 return ERRVAL;
 
                 Expression::LOGIC { lhs, op, rhs } => {
@@ -283,6 +420,7 @@ impl<'a> Evaluator<'a> {
             if ret.type_equals(&NOTAVAL) { continue; }
             self.val_queue.push_back(ret.clone());
             self.inc_available_values();
+            self.hook_for_waiting_operations();
             if self.op_status() == READY {
                 let op = self.op_queue.pop_back().unwrap();
                 let val = op.value(
@@ -294,12 +432,61 @@ impl<'a> Evaluator<'a> {
                 self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
             }
         }
+        if !self.op_queue.is_empty() {
+            error!("*** UNCONSUMED OPS! *** {:?}", &self.op_queue);
+        }
+        if !self.exp_queue.is_empty() {
+            error!("*** UNCONSUMED EXPS! *** {:?}", &self.exp_queue);
+        }
+        if !self.val_queue.is_empty() {
+            error!("*** UNCONSUMED VALS! *** {:?}", &self.val_queue);
+        }
+        if self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
+            error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
+        }
         ret.clone()
     }
     fn inc_available_values(&mut self) {
-        self.op_queue.back_mut().unwrap().available_values += 1
+        self.op_queue.back_mut().unwrap().seen_values += 1;
     }
-    fn read_var(&mut self, varname: String) -> Value { self.env.read(&varname, self.scribe).clone() }
+    fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
+
+    fn hook_for_waiting_operations(&mut self) {
+        if self.op_status() != WAITING { return; }
+        // avoid saving memory of values that don't get used in a scope
+        if let Some(back) = self.op_queue.back_mut() {
+            if let SCOPE_CLEANUP_OP(_) = back.otype {
+                self.val_queue.pop_back();
+            }
+        }
+    }
+    fn replace_string_placeholders(&mut self, str: &String) -> String {
+        let mut result = String::new();
+        let mut varname = String::new();
+        for ch in str.chars() {
+            match ch {
+                '{' => { varname = "_".to_string(); }
+                '}' => {
+                    varname.remove(0);
+                    let val = self.read_var(&varname);
+                    result += &*val.to_string();
+                    varname.clear();
+                }
+                _ => {
+                    if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }
+                }
+            }
+        }
+        result
+    }
+    fn eolprint(&mut self, tok: &Token) -> Value {
+        let line = &tok.coord.row;
+        let start_new_line = self.env.last_print_line != *line;
+        self.env.last_print_line = *line;
+        let to_print = format!("[{}:{}]", self.env.curr_scope().entry_point, line);
+        if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
+        STRINGVAL(to_print)
+    }
 }
 //
 //

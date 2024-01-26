@@ -1,63 +1,25 @@
-// use std::ops::Deref;
-//
-// use crate::environment::Environment;
-// use crate::environment::value::{Value, ValueMap};
-// use crate::environment::value::Value::{ASSOCIATIONVAL, ERRVAL, INTEGERVAL, LAMBDAVAL, LAZYVAL, OPTIONVAL, STRINGVAL};
-// use crate::errors::{Error, ErrorScribe, ErrorType};
-// use crate::lexer::{Coord, Token, TokenType};
-// use crate::lexer::TokenType::{ASSIGN, ATAT, PULL, PULLEXTRACT, PUSH};
-// use crate::parser::{AssociationState, Expression, InputState};
-// use crate::parser::Expression::UNDERSCORE_EXPR;
-//
-// pub fn eval_association(
-//     pairs: &Vec<(Box<Expression>, Box<Expression>)>,
-//     lazy: bool,
-//     env: &mut Environment,
-//     scribe: &mut ErrorScribe,
-// ) -> Value {
-//     let mut map = ValueMap::new();
-//     // all code branching needs to be lazily evaluated, even the ones that aren't applicables
-//     // (because of side effects)
-//     for (k, v) in pairs {
-//         let v = if lazy { LAZYVAL(v.clone()) } else { eval_expr(v, env, scribe) };
-//         if k.type_equals(&UNDERSCORE_EXPR(Coord::new())) {
-//             map.default = Some(Box::new(v));
-//             continue;
-//         }
-//         map.insert(eval_expr(k, env, scribe), v);
-//     }
-//     ASSOCIATIONVAL(map)
-// }
-//
-// pub fn eval_pull(field: Value, op: &Token, source: Value, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
-//     return match source {
-//         ASSOCIATIONVAL(map) => {
-//             let mut query_expr = None;
-//             let mut query_val = None;
-//             if let Some(val) = map.get(&field) {
-//                 if let LAZYVAL(ex) = val { query_expr = Some(ex); } else { query_val = Some(val); };
-//             } else if let Some(val) = map.default {
-//                 if let LAZYVAL(ex) = val.deref() { query_expr = Some(ex.clone()); } else { query_val = Some(*val); };
-//             }
-//             let val = match (query_expr, query_val) {
-//                 (Some(ex), None) => { Some(Box::new(eval_expr(&ex, env, scribe))) }
-//                 (None, Some(val)) => { Some(Box::new(val.clone())) }
-//                 (None, None) => { None }
-//                 (_, _) => { unreachable!() }
-//             };
-//             return match op.ttype {
-//                 PULL => { OPTIONVAL(val) }
-//                 PULLEXTRACT => { if let Some(v) = val { *v } else { ERRVAL } }
-//                 _ => { unreachable!() }
-//             };
-//         }
-//         _ => {
-//             scribe.annotate_error(Error::on_coord(&env.coord,
-//                                                   ErrorType::EVAL_INVALID_OP(PULL, vec![source])));
-//             ERRVAL
-//         }
-//     };
-// }
+use crate::environment::value::{Value, ValueMap};
+use crate::environment::value::Value::*;
+use crate::evaluator::{Evaluator, Operation};
+use crate::evaluator::OperationType::*;
+use crate::parser::Expression;
+
+
+pub fn eval_association(
+    eval: &mut Evaluator,
+    pairs: Vec<(Box<Expression>, Box<Expression>)>,
+    lazy: bool,
+) -> Value {
+    eval.op_queue.push_back(Operation::from_type(
+        ASSOC_GROWER_OP(ValueMap::new(), pairs.len(), lazy)));
+    for (k, v) in pairs.iter().rev() {
+        eval.exp_queue.push_back(*v.clone());
+        eval.exp_queue.push_back(*k.clone());
+    }
+    NOTAVAL
+}
+
+
 //
 // pub fn eval_push(
 //     obj: &Expression, args: &Expression, env: &mut Environment, scribe: &mut ErrorScribe,
@@ -178,25 +140,6 @@
 //     }
 // }
 //
-// pub fn replace_string_placeholders(str: &String, env: &mut Environment, scribe: &mut ErrorScribe) -> String {
-//     let mut result = String::new();
-//     let mut varname = String::new();
-//     for ch in str.chars() {
-//         match ch {
-//             '{' => { varname = "_".to_string(); }
-//             '}' => {
-//                 varname.remove(0);
-//                 let val = env.read(&varname, scribe);
-//                 result += &*val.to_string();
-//                 varname.clear();
-//             }
-//             _ => {
-//                 if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }
-//             }
-//         }
-//     }
-//     result
-// }
 //
 //
 // pub fn eval_association_declaration(

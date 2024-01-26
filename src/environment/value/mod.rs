@@ -25,6 +25,7 @@ pub enum Value {
     LAZYVAL(Box<Expression>),
     ERRVAL,
     NOTAVAL,
+    UNDERSCOREVAL,
 }
 
 impl Value {
@@ -144,7 +145,7 @@ impl Value {
             LAZYVAL(_) => { f.write_str("(not yet evaluated)") }
             INTEGERVAL(int) => { f.write_str(&*int.to_string()) }
             FLOATVAL(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
-            STRINGVAL(str) => { f.write_str(&*format!("\"{}\"", str)) }
+            STRINGVAL(str) => { f.write_str(str) }
             BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
             LAMBDAVAL { .. } => { f.write_str("applicable") }
             ASSOCIATIONVAL(map) => {
@@ -166,6 +167,7 @@ impl Value {
                     Some(v) => { f.write_str(&*format!("?{}", v)) }
                 }
             }
+            UNDERSCOREVAL => f.write_str("_")
         }
     }
 
@@ -177,6 +179,7 @@ impl Value {
             (BOOLEANVAL(_), BOOLEANVAL(_)) |
             (ERRVAL, ERRVAL) |
             (LAMBDAVAL { .. }, LAMBDAVAL { .. }) |
+            (UNDERSCOREVAL, UNDERSCOREVAL) |
             (NOTAVAL, NOTAVAL) => { true }
             (_, _) => false
         }

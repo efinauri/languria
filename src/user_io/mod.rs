@@ -101,9 +101,6 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
             println!("{:#?}", ex);
         }
     }
-    // let input_exprs = exprs.iter()
-    //     .map(|ex| Box::new(ex.clone()))
-    //     .collect();
 
 
     let mut evaluator = Evaluator::from_parser(&mut exprs, scribe, env);

@@ -55,7 +55,7 @@ impl Expression {
             VAR_RAW(coord, _) => &coord,
 
             ARGS(exprs) |
-            BLOCK(exprs) => exprs.first().map(|ex|ex.coord()).unwrap_or(&Coord::zero()),
+            BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&Coord::zero()),
 
             APPLICABLE_EXPR { params: expr, .. } |
             PUSH_EXPR { obj: expr, .. } |
@@ -63,26 +63,25 @@ impl Expression {
             OPTION_EXPR(expr) |
             RETURN_EXPR(expr) => expr.coord(),
 
-            ASSOCIATION_EXPR(v) => v.first().map(|(ex,_)| ex.coord()).unwrap_or(&Coord::zero()),
+            ASSOCIATION_EXPR(v) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&Coord::zero()),
 
             LIST_DECLARATION_EXPR { .. } |
             SET_DECLARATION_EXPR { .. } |
             VALUE_WRAPPER(_) |
             NOTANEXPR => &Coord::zero(),
-
         }
     }
 
     pub fn last_instruction(&self) -> &Expression {
         match self {
             RETURN_EXPR(e) => e.last_instruction(),
-            BLOCK(exprs) => exprs.last().map(|e|e.last_instruction()).unwrap_or(self),
-            _=> self
+            BLOCK(exprs) => exprs.last().map(|e| e.last_instruction()).unwrap_or(self),
+            _ => self
         }
     }
 
     pub fn is_tail_call_optimizable(&self) -> bool {
-        if let APPLIED_EXPR {..} = self.last_instruction() { return true; }
+        if let APPLIED_EXPR { .. } = self.last_instruction() { return true; }
         false
     }
 
@@ -103,7 +102,7 @@ impl Expression {
             (LOGIC { .. }, LOGIC { .. }) |
             (GROUPING(_), GROUPING(_)) |
             (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
-            (VAR_RAW(_,_), VAR_RAW(_,_)) |
+            (VAR_RAW(_, _), VAR_RAW(_, _)) |
             (APPLIED_EXPR { .. }, APPLIED_EXPR { .. }) |
             (ASSOCIATION_EXPR(_), ASSOCIATION_EXPR(_)) |
             (PULL_EXPR { .. }, PULL_EXPR { .. }) |
@@ -162,7 +161,7 @@ impl Parser<'_> {
         if self.tokens.is_empty() { return; }
         while self.can_consume() {
             let expr = self.build_expression();
-            self.exprs.push_back(expr);
+            self.exprs.push_front(expr);
         }
     }
 
@@ -318,10 +317,17 @@ impl Parser<'_> {
         let mut expr = self.primary();
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
+            let mut body = self.primary();
+            if let ARGS(_) = body {
+                body = APPLICABLE_EXPR {
+                    params: Box::new(body),
+                    body: Box::new(self.build_expression()),
+                }
+            };
             expr = APPLIED_EXPR {
                 arg: Box::new(expr),
                 op: self.read_prev().clone(),
-                body: Box::new(self.primary()),
+                body: Box::new(body),
             }
         }
         expr
@@ -361,9 +367,7 @@ impl Parser<'_> {
                 let exprs = if let Some(acc) =
                     self.accumulate(BAR) { acc } else { return NOTANEXPR; };
                 self.cursor.step_fwd();
-                if !self.curr_in(&APPLICATION_TOKENS) {
-                    APPLICABLE_EXPR { params: Box::new(ARGS(exprs)), body: Box::new(self.build_expression()) }
-                } else { ARGS(exprs) }
+                ARGS(exprs)
             }
             UNDERSCORE => {
                 self.cursor.step_fwd();
@@ -416,7 +420,7 @@ impl Parser<'_> {
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
             let expr = self.build_expression();
             if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
-            self.exprs.push_back(expr.clone());
+            self.exprs.push_front(expr.clone());
             exprs.push(Box::new(expr));
         }
         self.assert_curr_is(RBRACE);
@@ -440,7 +444,7 @@ impl Parser<'_> {
                 }
             } else { unreachable!() };
         }
-        VAR_RAW(self.read_curr().coord.clone(), str.clone())
+        VAR_RAW(self.read_prev().coord.clone(), str.clone())
     }
 
 
