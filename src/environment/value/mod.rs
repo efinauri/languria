@@ -44,6 +44,10 @@ pub struct ValueMap {
 }
 
 impl ValueMap {
+    pub fn len(&self) -> usize { self.map.len() }
+    pub fn ith_key(&self, i: &usize) -> Value { self.map.keys().nth(*i).unwrap().deref().clone() }
+    pub fn ith_val(&self, i: &usize) -> Value { self.map.values().nth(*i).unwrap().deref().clone() }
+
     pub fn new() -> ValueMap {
         ValueMap {
             map: Default::default(),

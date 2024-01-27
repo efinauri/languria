@@ -317,6 +317,7 @@ impl Parser<'_> {
         let mut expr = self.primary();
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
+            let op = self.read_prev().clone();
             let mut body = self.primary();
             if let ARGS(_) = body {
                 body = APPLICABLE_EXPR {
@@ -326,7 +327,7 @@ impl Parser<'_> {
             };
             expr = APPLIED_EXPR {
                 arg: Box::new(expr),
-                op: self.read_prev().clone(),
+                op,
                 body: Box::new(body),
             }
         }
@@ -496,10 +497,9 @@ impl Parser<'_> {
             if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
             items.push(Box::new(expr));
         } else {
-            self.assert_curr_is(COMMA);
-            self.cursor.step_fwd();
-            if let Some(acc) = self.accumulate(RBRACKET) {
-                items = acc;
+            if self.curr_in(&[COMMA]) { self.cursor.step_fwd(); }
+            if let Some(mut acc) = self.accumulate(RBRACKET) {
+                items.append(&mut acc);
             } else { return NOTANEXPR; }
         }
         self.assert_curr_is(RBRACKET);

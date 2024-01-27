@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
-use log::{error, info};
+use log::error;
 
 use operation::Operation;
 use operation::OperationType::*;
@@ -25,6 +25,7 @@ pub struct Evaluator<'a> {
     val_queue: VecDeque<Value>,
     scribe: &'a mut ErrorScribe,
     env: &'a mut Environment,
+    should_enqueue_val: bool,
 }
 
 #[derive(PartialEq)]
@@ -41,6 +42,7 @@ impl<'a> Evaluator<'a> {
             exp_queue: exprs,
             op_queue: Default::default(),
             val_queue: Default::default(),
+            should_enqueue_val: false,
             scribe,
             env,
         }
@@ -58,9 +60,7 @@ impl<'a> Evaluator<'a> {
         ERRVAL
     }
 
-    fn inc_available_values(&mut self) {
-        self.op_queue.back_mut().unwrap().seen_values += 1;
-    }
+    fn inc_seen_values(&mut self) { self.op_queue.back_mut().unwrap().seen_values += 1; }
 
     fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
 
@@ -93,6 +93,7 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn value(&mut self) -> Value {
+        env_logger::init();
         // if you insert directly to the evaluator you have to be careful about reversing the order of the inserted items.
         // pushing front to these queries and merging them with the evaluator at the end of the iteration is simpler
         // to reason about
@@ -100,6 +101,7 @@ impl<'a> Evaluator<'a> {
         let mut aux_exp_queue = VecDeque::new();
         let mut ret = NOTAVAL;
         while let Some(expr) = self.exp_queue.pop_back() {
+            self.should_enqueue_val = true;
             ret = match expr {
                 Expression::VAR_RAW(_, varname) => { self.env.read(&varname, self.scribe).clone() }
                 Expression::ARGS(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
@@ -156,8 +158,8 @@ impl<'a> Evaluator<'a> {
                     } else { aux_exp_queue.push_front(*arg) }
                     aux_exp_queue.push_front(*body);
 
-                    aux_op_queue.push_front(Operation::from_type(APPLICATION_OP(op, args_size)));
-                    aux_op_queue.push_front(Operation::from_type(APPLICATION_CLEANUP));
+                    aux_op_queue.push_front(Operation::from_type(BIND_APPLICATION_ARGS_TO_PARAMS_OP(args_size, op.clone())));
+                    aux_op_queue.push_front(Operation::from_type(BOUND_APPLICATION_EVALUATOR_OP));
                     NOTAVAL
                 }
                 Expression::PULL_EXPR { source, op, key } => {
@@ -183,7 +185,7 @@ impl<'a> Evaluator<'a> {
                 Expression::BLOCK(exprs) => {
                     self.env.create_scope();
                     for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
-                    aux_op_queue.push_front(Operation::from_type(SCOPE_CLEANUP_OP(exprs.len())));
+                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len())));
                     NOTAVAL
                 }
                 Expression::GROUPING(expr) => {
@@ -241,10 +243,6 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(BINARY_OP(op)));
                     NOTAVAL
                 }
-                _ => {
-                    dbg!("TODO");
-                    self.error(ErrorType::GENERICERROR)
-                }
             };
             // append also clears the aux queues for the next iteration.
             self.exp_queue.append(&mut aux_exp_queue);
@@ -252,9 +250,11 @@ impl<'a> Evaluator<'a> {
 
             if self.op_status() != WAITING { continue; }
             if ret.type_equals(&NOTAVAL) { continue; }
-            self.val_queue.push_back(ret.clone());
-            self.inc_available_values();
-            self.hook_for_waiting_operations();
+            if self.should_enqueue_val {
+                self.val_queue.push_back(ret.clone());
+                // dbg!(&self.val_queue);
+            };
+            self.inc_seen_values();
             if self.op_status() == READY {
                 let op = self.op_queue.pop_back().unwrap();
                 let val = op.value(
@@ -263,6 +263,7 @@ impl<'a> Evaluator<'a> {
                     &mut self.exp_queue,
                     self.env,
                 );
+
                 self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
             }
         }
@@ -276,18 +277,8 @@ impl<'a> Evaluator<'a> {
             error!("*** UNCONSUMED VALS! *** {:?}", &self.val_queue);
         }
         if self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
-            info!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
+            error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
         }
-        ret.clone()
-    }
-
-    fn hook_for_waiting_operations(&mut self) {
-        if self.op_status() != WAITING { return; }
-        // avoid saving memory of values that don't get used in a scope
-        if let Some(back) = self.op_queue.back_mut() {
-            if let SCOPE_CLEANUP_OP(_) = back.otype {
-                self.val_queue.pop_back();
-            }
-        }
+        ret
     }
 }

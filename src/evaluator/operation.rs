@@ -3,10 +3,10 @@ use std::ops::Deref;
 
 use crate::environment::Environment;
 use crate::environment::value::{Value, ValueMap};
-use crate::environment::value::Value::{ASSOCIATIONVAL, BOOLEANVAL, ERRVAL, LAMBDAVAL, LAZYVAL, NOTAVAL, OPTIONVAL, UNDERSCOREVAL};
+use crate::environment::value::Value::*;
 use crate::evaluator::operation::OperationType::*;
 use crate::lexer::Token;
-use crate::lexer::TokenType::{AND, ASBOOL, DIV, DOLLAR, EQ, EXTRACT, GT, GTE, LT, LTE, MINUS, MODULO, MUL, NOT, OR, PLUS, POW, PULL, PULLEXTRACT, UNEQ, XOR};
+use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
 #[derive(Debug)]
@@ -18,13 +18,14 @@ pub enum OperationType {
     LOGIC_OP(Token),
     UNARY_OP(Token),
     VARASSIGN_OP(String, Token),
-    SCOPE_CLEANUP_OP(usize),
+    SCOPE_DURATION_COUNTDOWN_OP(usize),
     RETURN_CLEANUP,
     ASSOC_GROWER_OP(ValueMap, usize, bool),
     PULL_OP(Token),
-    APPLICATION_OP(Token, usize),
-    APPLICATION_CLEANUP,
+    BIND_APPLICATION_ARGS_TO_PARAMS_OP(usize, Token),
+    BOUND_APPLICATION_EVALUATOR_OP,
     ASSOC_PUSHER_OP,
+    ITERATIVE_PARAM_BINDER(usize, Box<Value>, Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -43,13 +44,14 @@ impl Operation {
             LOGIC_OP(_) => 2,
             UNARY_OP(_) => 1,
             VARASSIGN_OP(_, _) => 1,
-            SCOPE_CLEANUP_OP(n) => *n,
+            SCOPE_DURATION_COUNTDOWN_OP(n) => *n,
             RETURN_CLEANUP => 1,
             ASSOC_GROWER_OP(_, _, _) => 1,
             PULL_OP(_) => 2,
-            APPLICATION_OP(_, n) => *n,
-            APPLICATION_CLEANUP => 1,
+            BIND_APPLICATION_ARGS_TO_PARAMS_OP(n, _) => *n,
+            BOUND_APPLICATION_EVALUATOR_OP => 1,
             ASSOC_PUSHER_OP => 3,
+            ITERATIVE_PARAM_BINDER(_, _, _) => 1
         };
         Operation {
             seen_values: 0,
@@ -62,14 +64,14 @@ impl Operation {
     /// without being normally executed.
     fn flush(&self,
              vals: &mut VecDeque<Value>,
-             ops: &mut VecDeque<Operation>,
+             _ops: &mut VecDeque<Operation>,
              exprs: &mut &mut VecDeque<Expression>,
-             env: &mut Environment,
+             _env: &mut Environment,
     ) {
         //usually an operation keeps every value it sees because it needs them all to make sense,
         // but in other situations this is not necessary.
         let kept_values = match self.otype {
-            SCOPE_CLEANUP_OP(_) => 0,
+            SCOPE_DURATION_COUNTDOWN_OP(_) => 0,
             _ => self.seen_values
         };
         // trim values calculated for its future execution.
@@ -116,9 +118,10 @@ impl Operation {
                     _ => { false }
                 };
                 if can_exit_early {
-                    // no need to eval next expr, and return overall result
+                    // no need to eval next expr. remove rhs from stack, pop value that was read and return.
                     // early exit from "or" is because whole expr is true, and the inverse goes for "and"
                     exprs.pop_back();
+                    vals.pop_back();
                     BOOLEANVAL(tok.type_equals(&OR))
                 } else {
                     ops.push_back(Operation::from_type(LOGIC_OP(tok.to_owned())));
@@ -149,15 +152,16 @@ impl Operation {
             VARASSIGN_OP(varname, op) => {
                 env.write(varname, &vals.pop_back().unwrap(), op)
             }
-            SCOPE_CLEANUP_OP(_) => {
+            SCOPE_DURATION_COUNTDOWN_OP(_) => {
                 env.destroy_scope();
                 vals.pop_back().unwrap()
             }
             RETURN_CLEANUP => {
                 let return_val = vals.pop_back().unwrap();
                 while let Some(op) = ops.pop_back() {
+                    dbg!("flushing.", &op);
                     op.flush(vals, ops, exprs, env);
-                    if let SCOPE_CLEANUP_OP(_) = op.otype { break; }
+                    if let SCOPE_DURATION_COUNTDOWN_OP(_) = op.otype { break; }
                 }
                 env.destroy_scope();
                 return_val
@@ -201,14 +205,36 @@ impl Operation {
                     _ => ERRVAL
                 };
             }
-            APPLICATION_OP(_, _) => {
-                // | args | @ lambdaval, where lambdaval has params and actual body)
+            BIND_APPLICATION_ARGS_TO_PARAMS_OP(_, tok) => {
                 env.create_scope();
-                // body must contain lambda
-                let lambda_contents = if let Expression::APPLICABLE_EXPR { params, body } = exprs.back().unwrap() {
+                if tok.type_equals(&ATAT) {
+                    // assoc_arg @@ it-expression. another operation takes over, binding one iteration of params at a time.
+                    let arg = vals.pop_back().unwrap();
+                    return match arg {
+                        ASSOCIATIONVAL(_) => {
+                            Operation::from_type(ITERATIVE_PARAM_BINDER(
+                                0, Box::from(arg), Box::from(exprs.back().unwrap().clone())))
+                                .value(vals, ops, exprs, env)
+                        }
+                        STRINGVAL(_) => {
+                            Operation::from_type(ITERATIVE_PARAM_BINDER(
+                                0, Box::from(arg), Box::from(exprs.back().unwrap().clone())))
+                                .value(vals, ops, exprs, env)
+                        }
+                        _ => ERRVAL
+                    };
+                }
+                // | args | @ lambdaval, where lambdaval = | params | body
+                let lambda_contents = if let Expression::APPLICABLE_EXPR {
+                    params, body
+                } = exprs.back().unwrap() {
                     (params.deref().clone(), body.deref().clone())
                 } else { return ERRVAL; };
-                let params = if let Expression::ARGS(params) = lambda_contents.0 { params } else { unreachable!() };
+                let params = lambda_contents.0;
+
+                let params = if let Expression::ARGS(params) = params {
+                    params
+                } else { unreachable!() };
                 for param in params {
                     if let Expression::VAR_RAW(_, varname) = *param {
                         env.write_binding(&varname, &vals.pop_back().unwrap());
@@ -216,11 +242,51 @@ impl Operation {
                 }
                 NOTAVAL
             }
-            APPLICATION_CLEANUP => {
-                if let LAMBDAVAL { params: _params, body } = vals.pop_back().unwrap() {
-                    exprs.push_back(*body);
-                };
+            ITERATIVE_PARAM_BINDER(past_iterations, iterand, body) => {
+                // eat previous iteration. this doesn't eat the last iteration since that is consumed in
+                // the closing operation
+                if *past_iterations != 0 { vals.pop_back().unwrap(); }
+                let it;
+                let ti;
+                let idx;
+                let len;
+                match iterand.deref() {
+                    STRINGVAL(str) => {
+                        it = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
+                        ti = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
+                        idx = INTEGERVAL(*past_iterations as i64);
+                        len = str.len();
+                    }
+                    ASSOCIATIONVAL(map) => {
+                        it = map.ith_key(past_iterations);
+                        ti = map.ith_val(past_iterations);
+                        idx = INTEGERVAL(*past_iterations as i64);
+                        len = map.len();
+                    }
+                    _ => { return ERRVAL; }
+                }
+                env.write_binding(&"it".to_string(), &it);
+                env.write_binding(&"ti".to_string(), &ti);
+                env.write_binding(&"idx".to_string(), &idx);
+                if len > past_iterations + 1 {
+                    ops.push_back(Operation::from_type(ITERATIVE_PARAM_BINDER(
+                        past_iterations + 1,
+                        iterand.to_owned(), body.to_owned(),
+                    )));
+                }
+                // always push back the body in the exprs even when the above condition is false:
+                // still need to go through the last iteration of the application.
+                exprs.push_back(body.deref().clone());
                 NOTAVAL
+            }
+            BOUND_APPLICATION_EVALUATOR_OP => {
+                // evaluate the body (one last time, in the case of an iterated application).
+                let body = if let LAMBDAVAL {
+                    params: _params, body
+                } = vals.pop_back().unwrap() { body } else { return ERRVAL; };
+                    exprs.push_back(*body);
+                    ops.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)));
+                    return NOTAVAL;
             }
             ASSOC_PUSHER_OP => {
                 let v = vals.pop_back().unwrap();
@@ -230,9 +296,9 @@ impl Operation {
                     // removal if v == _, and change is on default if k == _
                     match (k, v) {
                         (UNDERSCOREVAL, UNDERSCOREVAL) => { map.default = None }
-                        (UNDERSCOREVAL, val) => {map.default = Some(Box::from(val.to_owned())); }
-                        (key, UNDERSCOREVAL) => {map.remove(key); }
-                        (key, val) => {map.insert(key, val); }
+                        (UNDERSCOREVAL, val) => { map.default = Some(Box::from(val.to_owned())); }
+                        (key, UNDERSCOREVAL) => { map.remove(key); }
+                        (key, val) => { map.insert(key, val); }
                     }
                     ASSOCIATIONVAL(map)
                 } else { ERRVAL }

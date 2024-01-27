@@ -20,36 +20,6 @@
 //     env.destroy_scope();
 //     return ret;
 // }
-//
-// fn eval_application_args(arg: &Box<Expression>, env: &mut Environment, scribe: &mut ErrorScribe) -> Vec<Value> {
-//     if let Expression::ARGS(args) = arg.deref() {
-//         args.iter().map(|ex| eval_expr(ex, env, scribe)).collect()
-//     } else { vec![eval_expr(arg, env, scribe)] }
-// }
-//
-// fn eval_parametrized_application(args: &Vec<Value>, body: &Value, env: &mut Environment, scribe: &mut ErrorScribe) -> Value {
-//     // | args | @ lambdaval (with params and body)
-//
-//     // body must contain lambda
-//     let lambda_contents = if let LAMBDAVAL { params, body } = body {
-//         (params.deref().clone(), body.deref().clone())
-//     } else {
-//         scribe.annotate_error(Error::on_coord(&env.coord, ErrorType::EVAL_ARGS_TO_NOT_APPLICABLE));
-//         return ERRVAL;
-//     };
-//     let params = if let Expression::ARGS(params) = lambda_contents.0 { params } else { unreachable!() };
-//     for (arg, param) in args.iter().zip(params) {
-//         if let Expression::VAR_RAW(_, name) = param.deref() {
-//             env.write(
-//                 &name,
-//                 arg,
-//                 &Token::new(ASSIGN, 0, 0),
-//             );
-//         }
-//     }
-//     eval_expr(&lambda_contents.1, env, scribe)
-// }
-//
 // fn eval_iterated_application(
 //     arg: Value,
 //     body: &Box<Expression>,
@@ -114,7 +84,7 @@ fn build_items_vec(
         int_range[i] = int;
     }
 
-    let mut ret;
+    let ret;
     if int_range[0] <= int_range[1] {
         ret = (int_range[0]..int_range[1])
             .map(|i| Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0)))
@@ -131,7 +101,7 @@ pub fn desugar_association_declaration(
     association_state: AssociationState,
     input_type: InputType,
     items: Vec<Box<Expression>>,
-    eval: &mut Evaluator,
+    _eval: &mut Evaluator,
     exp_queue: &mut VecDeque<Expression>,
     op_queue: &mut VecDeque<Operation>,
 ) -> Value {

@@ -42,7 +42,6 @@ impl Environment {
 
     pub fn try_read(&self, varname: &String) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
-            // dbg!(i, &scope.variables.len());
             if let Some(val) = scope.variables.get(varname) { return Some(val); }
         }
         None
