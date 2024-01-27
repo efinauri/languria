@@ -93,7 +93,7 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn value(&mut self) -> Value {
-        env_logger::init();
+        // env_logger::init();
         // if you insert directly to the evaluator you have to be careful about reversing the order of the inserted items.
         // pushing front to these queries and merging them with the evaluator at the end of the iteration is simpler
         // to reason about

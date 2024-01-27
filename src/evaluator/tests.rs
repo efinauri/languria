@@ -44,6 +44,7 @@ mod tests {
                 exp_queue,
                 op_queue: Default::default(),
                 val_queue: Default::default(),
+                should_enqueue_val: false,
                 scribe,
                 env,
             }
