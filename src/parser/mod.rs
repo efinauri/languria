@@ -24,8 +24,8 @@ pub enum Expression {
     APPLIED_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>),
-    LIST_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
-    SET_DECLARATION_EXPR { range: InputState, items: Vec<Box<Expression>> },
+    LIST_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>> },
+    SET_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>> },
     PULL_EXPR { source: Box<Expression>, op: Token, key: Box<Expression> },
     PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
@@ -121,7 +121,7 @@ pub enum AssociationState {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum InputState {
+pub enum InputType {
     RANGE,
     ITEMS,
 }
@@ -485,12 +485,12 @@ impl Parser<'_> {
         Some(items)
     }
     fn build_association_declaration(&mut self, list: bool) -> Expression {
-        let mut input_state = InputState::ITEMS;
+        let mut input_state = InputType::ITEMS;
         let expr = self.build_expression();
         if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
         let mut items = vec![Box::new(expr)];
         if self.curr_in(&[RANGE]) {
-            input_state = InputState::RANGE;
+            input_state = InputType::RANGE;
             self.cursor.step_fwd();
             let expr = self.build_expression();
             if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
@@ -504,6 +504,6 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
-        if list { LIST_DECLARATION_EXPR { range: input_state, items } } else { SET_DECLARATION_EXPR { range: input_state, items } }
+        if list { LIST_DECLARATION_EXPR { input_type: input_state, items } } else { SET_DECLARATION_EXPR { input_type: input_state, items } }
     }
 }

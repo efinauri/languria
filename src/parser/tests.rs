@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::errors::ErrorScribe;
-    use crate::lexer::Token;
+    use crate::lexer::{Coord, Token};
     use crate::lexer::TokenType::*;
     use crate::parser::Expression::*;
     use crate::parser::Parser;
@@ -89,7 +89,7 @@ mod tests {
         dbg!(&expr);
         assert!(expr.type_equals(&PULL_EXPR {
             source: Box::new(NOTANEXPR),
-            op: PULL,
+            op: Token::debug(PULL),
             key: Box::new(NOTANEXPR),
         }));
     }
@@ -108,7 +108,7 @@ mod tests {
         dbg!(&expr);
         assert!(expr.type_equals(&APPLIED_EXPR {
             arg: Box::new(NOTANEXPR),
-            op: NOTATOKEN,
+            op: Token::debug(NOTATOKEN),
             body: Box::new(NOTANEXPR),
         }));
     }
@@ -247,7 +247,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&VAR_RAW("".to_string())));
+        assert!(expr.type_equals(&VAR_RAW(Coord::new(), "".to_string())));
     }
 
     #[test]

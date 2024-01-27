@@ -1,62 +1,3 @@
-use crate::environment::value::{Value, ValueMap};
-use crate::environment::value::Value::*;
-use crate::evaluator::{Evaluator, Operation};
-use crate::evaluator::OperationType::*;
-use crate::parser::Expression;
-
-
-pub fn eval_association(
-    eval: &mut Evaluator,
-    pairs: Vec<(Box<Expression>, Box<Expression>)>,
-    lazy: bool,
-) -> Value {
-    eval.op_queue.push_back(Operation::from_type(
-        ASSOC_GROWER_OP(ValueMap::new(), pairs.len(), lazy)));
-    for (k, v) in pairs.iter().rev() {
-        eval.exp_queue.push_back(*v.clone());
-        eval.exp_queue.push_back(*k.clone());
-    }
-    NOTAVAL
-}
-
-
-//
-// pub fn eval_push(
-//     obj: &Expression, args: &Expression, env: &mut Environment, scribe: &mut ErrorScribe,
-// ) -> Value {
-//     // the caller performs desugaring to ensure that obj is not a variable
-//
-//     let mut obj = eval_expr(obj, env, scribe);
-//     let else_branch = vec![];
-//     let exprs = if let Expression::ARGS(exprs) = args { exprs } else { &else_branch };
-//     if exprs.len() != 2 {
-//         scribe.annotate_error(Error::on_coord(&env.coord,
-//                                               ErrorType::EVAL_INVALID_PUSH));
-//         return ERRVAL;
-//     }
-//     return match obj {
-//         ASSOCIATIONVAL(ref mut map) => {
-//             match (exprs.get(0).unwrap().deref(), exprs.get(1).unwrap().deref()) {
-//                 (UNDERSCORE_EXPR(_), UNDERSCORE_EXPR(_)) => { map.default = None; }
-//                 (UNDERSCORE_EXPR(_), val) => { map.default = Some(Box::new(eval_expr(val, env, scribe))); }
-//                 (key, UNDERSCORE_EXPR(_)) => { map.remove(eval_expr(key, env, scribe)); }
-//                 (key, val) => {
-//                     map.insert(
-//                         eval_expr(key, env, scribe),
-//                         eval_expr(val, env, scribe),
-//                     );
-//                 }
-//             };
-//             obj
-//         }
-//         _ => {
-//             scribe.annotate_error(Error::on_coord(&env.coord,
-//                                                   ErrorType::EVAL_INVALID_OP(PUSH, vec![obj])));
-//             return ERRVAL;
-//         }
-//     };
-// }
-//
 // pub fn eval_application(arg: &Box<Expression>,
 //                         op: &Token,
 //                         body: &Box<Expression>,
@@ -142,72 +83,71 @@ pub fn eval_association(
 //
 //
 //
-// pub fn eval_association_declaration(
-//     assoc_state: AssociationState,
-//     input_state: &InputState,
-//     is_lazy: bool,
-//     items: &Vec<Box<Expression>>,
-//     env: &mut Environment,
-//     scribe: &mut ErrorScribe,
-// ) -> Value {
-//     match desugar_association_pairs(assoc_state, input_state, items, env, scribe) {
-//         Some(pairs) => { eval_association(&pairs, is_lazy, env, scribe) }
-//         None => {
-//             scribe.annotate_error(Error::on_coord(&env.coord,
-//                                                   ErrorType::EVAL_INVALID_RANGE));
-//             ERRVAL
-//         }
-//     }
-// }
-//
-// fn desugar_association_pairs(
-//     assoc_state: AssociationState,
-//     input_state: &InputState,
-//     items: &Vec<Box<Expression>>,
-//     env: &mut Environment,
-//     scribe: &mut ErrorScribe,
-// ) -> Option<Vec<(Box<Expression>, Box<Expression>)>> {
-//     let mut pairs = vec![];
-//     if input_state == &InputState::RANGE {
-//         let range = match eval_range(&items, env, scribe) {
-//             Some(r) => { r }
-//             None => { return None; }
-//         };
-//         for (el, i) in range.zip(0..) {
-//             pairs.push(
-//                 if assoc_state == AssociationState::LIST {
-//                     (Box::new(Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0))),
-//                      Box::new(Expression::LITERAL(Token::new(TokenType::INTEGER(el), 0, 0))))
-//                 } else {
-//                     (Box::new(Expression::LITERAL(Token::new(TokenType::INTEGER(el), 0, 0))),
-//                      Box::new(Expression::LITERAL(Token::new(TokenType::TRUE, 0, 0))))
-//                 }
-//             );
-//         }
-//     } else {
-//         for (el, i) in items.iter().zip(0..) {
-//             pairs.push(
-//                 if assoc_state == AssociationState::LIST {
-//                     (Box::new(Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0))),
-//                      (*el).clone())
-//                 } else {
-//                     ((*el).clone(),
-//                      Box::new(Expression::LITERAL(Token::new(TokenType::TRUE, 0, 0))))
-//                 }
-//             );
-//         }
-//     }
-//     Some(pairs)
-// }
-//
-// fn eval_range(items: &Vec<Box<Expression>>, env: &mut Environment, scribe: &mut ErrorScribe) -> Option<Box<dyn Iterator<Item=i64>>> {
-//     if items.len() != 2 { return None; }
-//     let lo = eval_expr(items.get(0).unwrap(), env, scribe);
-//     let hi = eval_expr(items.get(1).unwrap(), env, scribe);
-//     return match (lo, hi) {
-//         (INTEGERVAL(i), INTEGERVAL(j)) => {
-//             if i > j { Some(Box::new((1 + j..1 + i).rev())) } else { Some(Box::new(i..j)) }
-//         }
-//         (_, _) => { None }
-//     };
-// }
+
+use std::collections::VecDeque;
+use std::ops::Deref;
+
+use crate::environment::value::{Value, ValueMap};
+use crate::environment::value::Value::{ERRVAL, NOTAVAL};
+use crate::evaluator::Evaluator;
+use crate::evaluator::operation::Operation;
+use crate::evaluator::operation::OperationType::ASSOC_GROWER_OP;
+use crate::lexer::{Token, TokenType};
+use crate::parser::{AssociationState, Expression, InputType};
+
+fn build_items_vec(
+    input_type: InputType,
+    items: Vec<Box<Expression>>,
+) -> Option<Vec<Expression>> {
+    if input_type != InputType::RANGE {
+        return Some(items.iter()
+            .map(|it| it.deref().to_owned())
+            .collect());
+    }
+    if items.len() != 2 { return None; }
+
+    let mut int_range: [i64; 2] = [0, 0];
+    for (it, i) in items.iter().zip(0..) {
+        let int = if let Expression::LITERAL(tok) = it.deref() {
+            if let TokenType::INTEGER(s) = tok.ttype { s } else { return None; }
+        } else { return None; };
+        int_range[i] = int;
+    }
+
+    let mut ret;
+    if int_range[0] <= int_range[1] {
+        ret = (int_range[0]..int_range[1])
+            .map(|i| Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0)))
+            .collect::<Vec<Expression>>();
+    } else {
+        ret = (int_range[1] + 1..int_range[0] + 1).rev()
+            .map(|i| Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0)))
+            .collect::<Vec<Expression>>();
+    }
+    return Some(ret);
+}
+
+pub fn desugar_association_declaration(
+    association_state: AssociationState,
+    input_type: InputType,
+    items: Vec<Box<Expression>>,
+    eval: &mut Evaluator,
+    exp_queue: &mut VecDeque<Expression>,
+    op_queue: &mut VecDeque<Operation>,
+) -> Value {
+    let items = if let Some(it) = build_items_vec(input_type, items)
+    { it } else { return ERRVAL; };
+    op_queue.push_front(Operation::from_type(
+        ASSOC_GROWER_OP(ValueMap::new(), items.len(), true)
+    ));
+    for (it, i) in items.iter().zip(0..) {
+        if association_state == AssociationState::LIST {
+            exp_queue.push_front(Expression::LITERAL(Token::new(TokenType::INTEGER(i), 0, 0)));
+            exp_queue.push_front(it.to_owned());
+        } else {
+            exp_queue.push_front(it.to_owned());
+            exp_queue.push_front(Expression::LITERAL(Token::new(TokenType::TRUE, 0, 0)));
+        }
+    }
+    NOTAVAL
+}
