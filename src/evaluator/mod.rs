@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
+use std::process::exit;
 
 use log::error;
 
@@ -10,6 +11,7 @@ use crate::environment::Environment;
 use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::errors::ErrorType::EVAL_INVALID_PUSH;
 use crate::evaluator::OperationStatus::*;
 use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
@@ -25,7 +27,6 @@ pub struct Evaluator<'a> {
     val_queue: VecDeque<Value>,
     scribe: &'a mut ErrorScribe,
     env: &'a mut Environment,
-    should_enqueue_val: bool,
 }
 
 #[derive(PartialEq)]
@@ -42,7 +43,6 @@ impl<'a> Evaluator<'a> {
             exp_queue: exprs,
             op_queue: Default::default(),
             val_queue: Default::default(),
-            should_enqueue_val: false,
             scribe,
             env,
         }
@@ -50,7 +50,7 @@ impl<'a> Evaluator<'a> {
 
     fn op_status(&self) -> OperationStatus {
         if let Some(op) = self.op_queue.back() {
-            if op.seen_values == op.needed_values { READY } else { WAITING }
+            if op.seen_values == op.needed_to_see_values { READY } else { WAITING }
         } else { NOOP }
     }
 
@@ -62,7 +62,7 @@ impl<'a> Evaluator<'a> {
 
     fn inc_seen_values(&mut self) { self.op_queue.back_mut().unwrap().seen_values += 1; }
 
-    fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
+    pub(crate) fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
 
     fn replace_string_placeholders(&mut self, str: &String) -> String {
         let mut result = String::new();
@@ -93,7 +93,7 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn value(&mut self) -> Value {
-        // env_logger::init();
+        env_logger::init();
         // if you insert directly to the evaluator you have to be careful about reversing the order of the inserted items.
         // pushing front to these queries and merging them with the evaluator at the end of the iteration is simpler
         // to reason about
@@ -101,7 +101,10 @@ impl<'a> Evaluator<'a> {
         let mut aux_exp_queue = VecDeque::new();
         let mut ret = NOTAVAL;
         while let Some(expr) = self.exp_queue.pop_back() {
-            self.should_enqueue_val = true;
+            // dbg!(&self.val_queue);
+            // dbg!(&self.op_queue);
+            // dbg!(&self.exp_queue);
+            self.env.coord = expr.coord().clone();
             ret = match expr {
                 Expression::VAR_RAW(_, varname) => { self.env.read(&varname, self.scribe).clone() }
                 Expression::ARGS(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
@@ -142,12 +145,12 @@ impl<'a> Evaluator<'a> {
                         NOTAVAL
                     } else {
                         if let Expression::ARGS(exprs) = args.deref() {
-                            if exprs.len() != 2 { return ERRVAL; }
+                            if exprs.len() != 2 { return self.error(EVAL_INVALID_PUSH); }
                             aux_exp_queue.push_front(*obj);
                             for ex in exprs { aux_exp_queue.push_front(*ex.to_owned()); }
                             aux_op_queue.push_front(Operation::from_type(ASSOC_PUSHER_OP));
                             NOTAVAL
-                        } else { ERRVAL }
+                        } else { return self.error(EVAL_INVALID_PUSH); }
                     }
                 }
                 Expression::APPLIED_EXPR { arg, op, body } => {
@@ -159,7 +162,9 @@ impl<'a> Evaluator<'a> {
                     aux_exp_queue.push_front(*body);
 
                     aux_op_queue.push_front(Operation::from_type(BIND_APPLICATION_ARGS_TO_PARAMS_OP(args_size, op.clone())));
-                    aux_op_queue.push_front(Operation::from_type(BOUND_APPLICATION_EVALUATOR_OP));
+                    if op.type_equals(&AT) {
+                        aux_op_queue.push_front(Operation::from_type(AT_APPLICABLE_RESOLVER_OP));
+                    }
                     NOTAVAL
                 }
                 Expression::PULL_EXPR { source, op, key } => {
@@ -183,9 +188,10 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
                 Expression::BLOCK(exprs) => {
+                    let is_in_tail_call = self.env.current_scope_usages > 0;
                     self.env.create_scope();
                     for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
-                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len())));
+                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len(), is_in_tail_call)));
                     NOTAVAL
                 }
                 Expression::GROUPING(expr) => {
@@ -244,41 +250,48 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
             };
+            if ret.type_equals(&ERRVAL) {
+                error!("\nlast val: {:?}\nlast op: {:?}\nlast exp: {:?}\n", &self.val_queue.back(), &self.op_queue.back(), &self.exp_queue.back());
+                // while let Some(op) = self.op_queue.pop_back() {
+                //     error!("{} while resolving {:?}", op.coord, op.otype);
+                // }
+                exit(1);
+            }
+            for op in &mut aux_op_queue { op.set_coord(&self.env.coord); }
             // append also clears the aux queues for the next iteration.
             self.exp_queue.append(&mut aux_exp_queue);
             self.op_queue.append(&mut aux_op_queue);
 
             if self.op_status() != WAITING { continue; }
             if ret.type_equals(&NOTAVAL) { continue; }
-            if self.should_enqueue_val {
-                self.val_queue.push_back(ret.clone());
-                // dbg!(&self.val_queue);
-            };
+            if self.should_keep_seen_val() { self.val_queue.push_back(ret.clone()); }
             self.inc_seen_values();
             if self.op_status() == READY {
                 let op = self.op_queue.pop_back().unwrap();
-                let val = op.value(
-                    &mut self.val_queue,
-                    &mut self.op_queue,
-                    &mut self.exp_queue,
-                    self.env,
-                );
+                let val = op.value(self);
 
                 self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
             }
         }
+        if self.env.scopes.len() != 1 {
+            error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
+        }
         if !self.op_queue.is_empty() {
-            error!("*** UNCONSUMED OPS! *** {:?}", &self.op_queue);
+            error!("*** UNCONSUMED OPS! ***\n{:?}\n\n", &self.op_queue);
         }
         if !self.exp_queue.is_empty() {
-            error!("*** UNCONSUMED EXPS! *** {:?}", &self.exp_queue);
+            error!("*** UNCONSUMED EXPS! ***\n{:?}\n\n", &self.exp_queue);
         }
         if !self.val_queue.is_empty() {
-            error!("*** UNCONSUMED VALS! *** {:?}", &self.val_queue);
+            error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
         }
         if self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
             error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
         }
         ret
+    }
+    fn should_keep_seen_val(&self) -> bool {
+        let op = self.op_queue.back().unwrap();
+        op.needed_to_keep_values() > op.seen_values
     }
 }

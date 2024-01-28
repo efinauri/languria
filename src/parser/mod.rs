@@ -4,6 +4,7 @@ use std::vec;
 use crate::{Cursor, WalksCollection};
 use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::evaluator::Evaluator;
 use crate::lexer::{Coord, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
@@ -40,6 +41,15 @@ pub enum Expression {
 }
 
 impl Expression {
+    pub fn ok_or_var_with_applicable(&self, eval: &mut Evaluator) -> Box<Expression> {
+        if let VAR_RAW(_, varname) = &self {
+            if let Value::LAMBDAVAL { params, body }
+                = eval.read_var(varname) {
+                return Box::from(APPLICABLE_EXPR { params, body })
+            }
+        }
+        Box::from(self.clone())
+    }
     pub fn coord(&self) -> &Coord {
         match self {
             LITERAL(tok) => &tok.coord,
@@ -173,7 +183,15 @@ impl Parser<'_> {
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
-        self.pull()
+        self.applicable()
+    }
+
+    fn applicable(&mut self) -> Expression {
+        // if args expr has bubbled up without being captured by anything else, it means that it's defining an applicable expr.
+        let expr = self.pull();
+        if let ARGS(_) = expr {
+            APPLICABLE_EXPR { params: Box::new(expr), body: Box::new(self.build_expression()) }
+        } else { expr }
     }
 
     fn pull(&mut self) -> Expression {
@@ -417,19 +435,15 @@ impl Parser<'_> {
 
     fn process_code_block(&mut self) -> Expression {
         self.cursor.step_fwd();
+
         let mut exprs = vec![];
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
             let expr = self.build_expression();
             if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
-            self.exprs.push_front(expr.clone());
             exprs.push(Box::new(expr));
         }
         self.assert_curr_is(RBRACE);
         self.cursor.step_fwd();
-        let exprs_to_remove = if self.exprs.len() > exprs.len() {
-            self.exprs.len() - exprs.len()
-        } else { 0 };
-        self.exprs.truncate(exprs_to_remove);
         BLOCK(exprs)
     }
 

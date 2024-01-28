@@ -78,6 +78,7 @@ pub enum ErrorType {
     EVAL_INVALID_PUSH,
     EVAL_INVALID_RANGE,
     EVAL_UNEXPECTED_EXPRESSION,
+    EVAL_UNEXPECTED_NUMBER_OF_PARAMS{passed: usize, expected: usize},
 }
 
 #[derive(Debug)]
@@ -119,7 +120,11 @@ impl Display for Error {
             ErrorType::EVAL_INVALID_PUSH => "the correct push syntax is `association << |key, value|`".to_string(),
             ErrorType::EVAL_INVALID_RANGE => "cannot construct a range with the given boundaries".to_string(),
             ErrorType::EVAL_UNEXPECTED_EXPRESSION => "cannot use underscore or argument expression standalone".to_string(),
-
+            ErrorType::EVAL_UNEXPECTED_NUMBER_OF_PARAMS { passed, expected } => format!(
+                "expected {} params but got {}. \
+                if you're trying to call an applicable with no args, you need to pass _ as the only argument.",
+                expected, passed
+            ),
             ErrorType::GENERICERROR => "generic error".to_string()
         };
         f.write_str(&*(self.err_location() + &*msg).red())

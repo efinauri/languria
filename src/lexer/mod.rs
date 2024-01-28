@@ -107,7 +107,7 @@ lazy_static! {
 
 const ZERO_COORD: Coord = Coord { row: 0, column: 0 };
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct Coord {
     pub row: usize,
     pub column: usize,
@@ -115,14 +115,17 @@ pub struct Coord {
 
 impl Coord {
     pub fn zero() -> &'static Coord {&ZERO_COORD}
-}
-
-impl Coord {
     pub fn new() -> Coord { Coord { row: 0, column: 0 } }
     pub fn from(row: usize, column: usize) -> Coord { Coord{ row, column }}
 }
 
-#[derive(PartialEq, Clone)]
+impl Display for Coord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&*format!("[{}:{}]", self.row, self.column))
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct Token {
     pub ttype: TokenType,
     pub coord: Coord,

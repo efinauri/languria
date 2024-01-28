@@ -13,6 +13,7 @@ pub struct Environment {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) last_print_line: usize,
     pub(crate) coord: Coord,
+    pub current_scope_usages: usize,
 }
 
 impl Environment {
@@ -21,19 +22,24 @@ impl Environment {
             scopes: vec![Scope::new()],
             last_print_line: 0,
             coord: Coord { row: 0, column: 0 },
+            current_scope_usages: 0,
         }
     }
 
     pub fn create_scope(&mut self) {
-        println!("create [{}:{}] scopes:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        if self.current_scope_usages > 0 {
+            self.current_scope_usages-=1;
+            return;
+        }
+        println!("create [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         let mut scope = Scope::new();
         scope.coord = self.coord.clone();
         self.scopes.push(scope);
-        // dbg!(&self.scopes);
     }
 
     pub fn destroy_scope(&mut self) {
-        println!("\tdestroy [{}:{}] scopes:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        self.current_scope_usages = 0;
+        println!("\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
 
@@ -71,7 +77,7 @@ impl Environment {
     }
 
     pub fn write_binding(&mut self, varname: &String, varval: &Value) -> Value {
-        self.write(varname, varval, &Token::new(ASSIGN, 0, 0))
+        self.write(varname, varval, &Token::new(ASSIGN, self.coord.row, self.coord.column))
     }
 }
 
