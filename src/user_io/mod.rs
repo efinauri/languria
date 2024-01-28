@@ -103,7 +103,7 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
     }
 
 
-    let mut evaluator = Evaluator::from_parser(&mut exprs, scribe, env);
+    let mut evaluator = Evaluator::new(&mut exprs, scribe, env);
     let value = evaluator.value();
     if verbose {
         println!("and evaluated as:\n{:?}", &value)

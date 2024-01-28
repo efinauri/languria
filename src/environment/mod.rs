@@ -13,7 +13,7 @@ pub struct Environment {
     pub(crate) scopes: Vec<Scope>,
     pub(crate) last_print_line: usize,
     pub(crate) coord: Coord,
-    pub current_scope_usages: usize,
+    pub recycle_current_scope: bool,
 }
 
 impl Environment {
@@ -22,24 +22,24 @@ impl Environment {
             scopes: vec![Scope::new()],
             last_print_line: 0,
             coord: Coord { row: 0, column: 0 },
-            current_scope_usages: 0,
+            recycle_current_scope: false,
         }
     }
 
     pub fn create_scope(&mut self) {
-        if self.current_scope_usages > 0 {
-            self.current_scope_usages-=1;
+        if self.recycle_current_scope {
+            self.recycle_current_scope == false;
             return;
         }
-        println!("create [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        println!("\t\tcreate [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         let mut scope = Scope::new();
         scope.coord = self.coord.clone();
         self.scopes.push(scope);
     }
 
     pub fn destroy_scope(&mut self) {
-        self.current_scope_usages = 0;
-        println!("\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        self.recycle_current_scope = false;
+        println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
 

@@ -4,14 +4,13 @@ use std::process::exit;
 
 use log::error;
 
-use operation::Operation;
-use operation::OperationType::*;
-
 use crate::environment::Environment;
 use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::errors::ErrorType::EVAL_INVALID_PUSH;
+use crate::evaluator::operation::Operation;
+use crate::evaluator::operation::OperationType::*;
 use crate::evaluator::OperationStatus::*;
 use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
@@ -19,6 +18,7 @@ use crate::parser::{AssociationState, Expression};
 
 mod tests;
 mod lib;
+
 mod operation;
 
 pub struct Evaluator<'a> {
@@ -38,7 +38,11 @@ enum OperationStatus {
 
 
 impl<'a> Evaluator<'a> {
-    pub fn from_parser(exprs: &'a mut VecDeque<Expression>, scribe: &'a mut ErrorScribe, env: &'a mut Environment) -> Evaluator<'a> {
+    pub fn new(
+        exprs: &'a mut VecDeque<Expression>,
+        scribe: &'a mut ErrorScribe,
+        env: &'a mut Environment,
+    ) -> Evaluator<'a> {
         Evaluator {
             exp_queue: exprs,
             op_queue: Default::default(),
@@ -48,11 +52,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn op_status(&self) -> OperationStatus {
-        if let Some(op) = self.op_queue.back() {
-            if op.seen_values == op.needed_to_see_values { READY } else { WAITING }
-        } else { NOOP }
-    }
+    pub fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
 
     fn error(&mut self, etype: ErrorType) -> Value {
         self.scribe.annotate_error(Error::on_coord(
@@ -60,9 +60,22 @@ impl<'a> Evaluator<'a> {
         ERRVAL
     }
 
-    fn inc_seen_values(&mut self) { self.op_queue.back_mut().unwrap().seen_values += 1; }
+    fn update_waiting_op(&mut self, ret: &mut Value) {
+        let op = self.op_queue.back_mut().unwrap();
+        if op.needed_to_keep_values() > op.seen_values { self.val_queue.push_back(ret.clone()); }
+        op.seen_values += 1;
+        if self.op_status() == READY {
+            let op = self.op_queue.pop_back().unwrap();
+            let val = op.value(self);
+            self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
+        }
+    }
 
-    pub(crate) fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
+    fn op_status(&self) -> OperationStatus {
+        if let Some(op) = self.op_queue.back() {
+            if op.seen_values == op.needed_to_see_values { READY } else { WAITING }
+        } else { NOOP }
+    }
 
     fn replace_string_placeholders(&mut self, str: &String) -> String {
         let mut result = String::new();
@@ -83,7 +96,9 @@ impl<'a> Evaluator<'a> {
         }
         result
     }
-    fn eolprint(&mut self, tok: &Token) -> Value {
+
+    /// produces the STRINGVAL [file.lgr:4]
+    fn print_debug_brick(&mut self, tok: &Token) -> Value {
         let line = &tok.coord.row;
         let start_new_line = self.env.last_print_line != *line;
         self.env.last_print_line = *line;
@@ -100,6 +115,7 @@ impl<'a> Evaluator<'a> {
         let mut aux_op_queue = VecDeque::new();
         let mut aux_exp_queue = VecDeque::new();
         let mut ret = NOTAVAL;
+
         while let Some(expr) = self.exp_queue.pop_back() {
             // dbg!(&self.val_queue);
             // dbg!(&self.op_queue);
@@ -154,6 +170,17 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 Expression::APPLIED_EXPR { arg, op, body } => {
+                    // tail call optimization: check if this is the last instruction of a block.
+                    if let Some(op) = self.op_queue.back() {
+                        if let SCOPE_DURATION_COUNTDOWN_OP(n, _) = op.otype {
+                            if op.seen_values + 1 == n {
+                                self.op_queue.pop_back();
+                                // TODO might be needed to flush everything instead of just popping?
+                                // self.op_queue.pop_back().unwrap().flush(self);
+                                self.env.recycle_current_scope = true;
+                            }
+                        }
+                    }
                     let mut args_size = 1;
                     if let Expression::ARGS(exprs) = arg.deref() {
                         args_size = exprs.len();
@@ -187,11 +214,14 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(RETURN_CLEANUP));
                     NOTAVAL
                 }
-                Expression::BLOCK(exprs) => {
-                    let is_in_tail_call = self.env.current_scope_usages > 0;
-                    self.env.create_scope();
+                Expression::BLOCK(exprs, is_function_body) => {
                     for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
-                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len(), is_in_tail_call)));
+                    if !is_function_body {
+                        self.env.create_scope();
+                    }
+                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(
+                        exprs.len(), !is_function_body)
+                    ));
                     NOTAVAL
                 }
                 Expression::GROUPING(expr) => {
@@ -206,7 +236,7 @@ impl<'a> Evaluator<'a> {
                 Expression::UNDERSCORE_EXPR(_) => UNDERSCOREVAL,
                 Expression::LITERAL(value) => {
                     match &value.ttype {
-                        EOLPRINT => { self.eolprint(&value) }
+                        EOLPRINT => { self.print_debug_brick(&value) }
                         FALSE => BOOLEANVAL(false),
                         TRUE => BOOLEANVAL(true),
                         STRING(str) => STRINGVAL(self.replace_string_placeholders(str)),
@@ -250,28 +280,23 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
             };
-            if ret.type_equals(&ERRVAL) {
-                error!("\nlast val: {:?}\nlast op: {:?}\nlast exp: {:?}\n", &self.val_queue.back(), &self.op_queue.back(), &self.exp_queue.back());
-                // while let Some(op) = self.op_queue.pop_back() {
-                //     error!("{} while resolving {:?}", op.coord, op.otype);
-                // }
-                exit(1);
-            }
+
             for op in &mut aux_op_queue { op.set_coord(&self.env.coord); }
             // append also clears the aux queues for the next iteration.
             self.exp_queue.append(&mut aux_exp_queue);
             self.op_queue.append(&mut aux_op_queue);
 
-            if self.op_status() != WAITING { continue; }
             if ret.type_equals(&NOTAVAL) { continue; }
-            if self.should_keep_seen_val() { self.val_queue.push_back(ret.clone()); }
-            self.inc_seen_values();
-            if self.op_status() == READY {
-                let op = self.op_queue.pop_back().unwrap();
-                let val = op.value(self);
-
-                self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
+            if self.op_status() != WAITING { continue; }
+            if ret.type_equals(&ERRVAL) {
+                error!("\nlast val: {:?}\nlast op: {:?}\nlast exp: {:?}\n",
+                    &self.val_queue.back(),
+                    &self.op_queue.back(),
+                    &self.exp_queue.back());
+                exit(1);
             }
+
+            self.update_waiting_op(&mut ret);
         }
         if self.env.scopes.len() != 1 {
             error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
@@ -289,9 +314,5 @@ impl<'a> Evaluator<'a> {
             error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
         }
         ret
-    }
-    fn should_keep_seen_val(&self) -> bool {
-        let op = self.op_queue.back().unwrap();
-        op.needed_to_keep_values() > op.seen_values
     }
 }
