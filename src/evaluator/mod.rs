@@ -238,7 +238,7 @@ impl<'a> Evaluator<'a> {
                 Expression::BLOCK(exprs) => {
                     for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
                     self.create_scope_lazily();
-                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len())));
+                    self.add_scope_closure_lazily(exprs.len());
                     NOTAVAL
                 }
                 Expression::GROUPING(expr) => {
@@ -301,6 +301,7 @@ impl<'a> Evaluator<'a> {
             for op in &mut aux_op_queue { op.set_coord(&self.env.coord); }
             // append also clears the aux queues for the next iteration.
             self.exp_queue.append(&mut aux_exp_queue);
+
             self.op_queue.append(&mut aux_op_queue);
 
             if ret.type_equals(&NOTAVAL) { continue; }
@@ -319,12 +320,27 @@ impl<'a> Evaluator<'a> {
         ret
     }
 
+    fn is_current_op_scope_closure(&self) -> Option<usize> {
+        if let Some(op) = self.op_queue.back() {
+            if let SCOPE_CLOSURE_OP(n) = op.otype { return Some(n); }
+        }
+        None
+    }
+
+    /// if the current operation is a scope closure, and we're about to add another one, we can instead collapse them.
+    fn add_scope_closure_lazily(&mut self, block_size: usize) {
+        if self.is_current_op_scope_closure().is_some() {
+            self.op_queue.pop_back();
+        }
+        self.op_queue.push_back(Operation::from_type(SCOPE_CLOSURE_OP(block_size)));
+    }
+
+    /// if the last instruction of a block needs to create a scope, it can instead just reuse the current block.
     fn create_scope_lazily(&mut self) {
-        // if the last instruction of a block needs to create a scope, it can instead just reuse the current block.
         let last_val = self.times_curr_scope_was_recycled;
         if let Some(op) = self.op_queue.back() {
             match op.otype {
-                SCOPE_DURATION_COUNTDOWN_OP(n) => { self.times_curr_scope_was_recycled += (op.seen_values + 1 == n) as usize; }
+                SCOPE_CLOSURE_OP(n) => { self.times_curr_scope_was_recycled += (op.seen_values + 1 == n) as usize; }
                 AT_APPLICABLE_RESOLVER_OP => { self.times_curr_scope_was_recycled += 1; }
                 _ => {}
             }

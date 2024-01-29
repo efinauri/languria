@@ -51,10 +51,11 @@ pub fn at_applicable_resolver_op(eval: &mut Evaluator) -> Value {
     let body = if let LAMBDAVAL { params: _params, body } = body_val {
         body
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
-    eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)));
+    eval.add_scope_closure_lazily(1);
     eval.exp_queue.push_back(*body);
     NOTAVAL
 }
+
 pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, iterand: &Box<Value>, body: &Box<Expression>) -> Result<Value, Value> {
 // eat previous iteration. this doesn't eat the last iteration since that is consumed in
     // the closing operation
@@ -87,9 +88,7 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
             iterand.to_owned(), body.to_owned(),
         )));
         eval.exp_queue.push_back(body.deref().clone());
-    } else {
-        eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)))
-    }
+    } else { eval.add_scope_closure_lazily(1) }
     // before all of this, however, we need to unlazy the map's value and put it back into ti.
     if let LAZYVAL(ex) = ti {
         eval.exp_queue.push_back(*ex);

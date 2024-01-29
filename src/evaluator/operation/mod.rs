@@ -18,7 +18,7 @@ pub enum OperationType {
     LOGIC_OP(Token),
     UNARY_OP(Token),
     VARASSIGN_OP(String, Token),
-    SCOPE_DURATION_COUNTDOWN_OP(usize),
+    SCOPE_CLOSURE_OP(usize),
     RETURN_CLEANUP,
     ASSOC_GROWER_OP(ValueMap, usize, bool),
     PULL_OP(Token),
@@ -40,7 +40,7 @@ pub struct Operation {
 impl Operation {
     pub fn needed_to_keep_values(&self) -> usize {
         match self.otype {
-            SCOPE_DURATION_COUNTDOWN_OP(_) => 0,
+            SCOPE_CLOSURE_OP(_) => 0,
             _ => self.needed_to_see_values
         }
     }
@@ -53,7 +53,7 @@ impl Operation {
             LOGIC_OP(_) => 2,
             UNARY_OP(_) => 1,
             VARASSIGN_OP(_, _) => 1,
-            SCOPE_DURATION_COUNTDOWN_OP(n) => *n,
+            SCOPE_CLOSURE_OP(n) => *n,
             RETURN_CLEANUP => 1,
             ASSOC_GROWER_OP(_, _, _) => 1,
             PULL_OP(_) => 2,
@@ -124,7 +124,7 @@ impl Operation {
             VARASSIGN_OP(varname, op) => {
                 eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op)
             }
-            SCOPE_DURATION_COUNTDOWN_OP(_) => {
+            SCOPE_CLOSURE_OP(_) => {
                 eval.env.destroy_scope();
                 previous_val.to_owned()
             }
@@ -132,15 +132,8 @@ impl Operation {
                 let return_val = eval.val_queue.pop_back().unwrap_or(previous_val.to_owned());
                 while let Some(op) = eval.op_queue.pop_back() {
                     op.flush(eval);
-                    if let SCOPE_DURATION_COUNTDOWN_OP(_) = op.otype { break; }
+                    if let SCOPE_CLOSURE_OP(_) = op.otype { break; }
                 }
-                // dbg!(&eval.op_queue.len(), &eval.is_curr_scope_recycled);
-                // TODO a solution that doesn't let these ops stack would be better.
-                // this works because anytime we recycle a scope we append an extra scope closure operation.
-                // for a single function call, this scope recycling is done twice, one when its functional scope would
-                // be opened and one for when the scope for its body would.
-                eval.op_queue.truncate(2 * eval.op_queue.len() - eval.times_curr_scope_was_recycled);
-
                 // if, after having exited block, we were also inside an @@ application, exit from that as well.
                 // the exited iteration was also enqueuing 1 exp and 1 val.
                 if let Some(op) = eval.op_queue.back() {
