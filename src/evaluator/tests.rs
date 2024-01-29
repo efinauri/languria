@@ -110,12 +110,10 @@ mod tests {
     #[test]
     fn return_in_block() {
         let mut vec = VecDeque::from(
-            vec![BLOCK(
-                vec![
+            vec![BLOCK(vec![
                     Box::new(RETURN_EXPR(int_expr(2))),
-                    str_expr("s"),
-                ]
-            )
+                    str_expr("s")
+                ])
             ]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();

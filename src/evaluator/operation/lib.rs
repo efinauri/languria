@@ -1,11 +1,11 @@
 use std::ops::Deref;
 
 use crate::environment::value::Value;
-use crate::environment::value::Value::{ASSOCIATIONVAL, BOOLEANVAL, ERRVAL, INTEGERVAL, LAMBDAVAL, LAZYVAL, NOTAVAL, OPTIONVAL, STRINGVAL, UNDERSCOREVAL};
+use crate::environment::value::Value::*;
 use crate::errors::ErrorType::*;
 use crate::evaluator::Evaluator;
 use crate::evaluator::operation::Operation;
-use crate::evaluator::operation::OperationType::{ITERATIVE_PARAM_BINDER, LOGIC_OP, OPTIONAL_OP, SCOPE_DURATION_COUNTDOWN_OP, TI_REBINDER_OP};
+use crate::evaluator::operation::OperationType::*;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -47,20 +47,17 @@ pub fn assoc_pusher_op(eval: &mut Evaluator) -> Value {
 }
 
 pub fn at_applicable_resolver_op(eval: &mut Evaluator) -> Value {
-// evaluate the body
     let body_val = eval.val_queue.pop_back().unwrap();
     let body = if let LAMBDAVAL { params: _params, body } = body_val {
         body
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
-    let tco = body.is_tail_call_optimizable();
-    // if the tail call is being optimized, we don't need to store the previous iteration's value.
-    if tco { eval.val_queue.pop_back(); }
-    eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(
-        1, !tco)));
+    if !body.ok_or_var_with_applicable(eval)
+        .is_tail_call_optimizable() {
+        eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)));
+    }
     eval.exp_queue.push_back(*body);
     NOTAVAL
 }
-
 pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, iterand: &Box<Value>, body: &Box<Expression>) -> Result<Value, Value> {
 // eat previous iteration. this doesn't eat the last iteration since that is consumed in
     // the closing operation
@@ -94,10 +91,7 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
         )));
         eval.exp_queue.push_back(body.deref().clone());
     } else {
-        let tco = body.is_tail_call_optimizable();
-        if tco { eval.env.recycle_current_scope = true }
-        eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(
-            1, !tco)))
+        eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)))
     }
     // before all of this, however, we need to unlazy the map's value and put it back into ti.
     if let LAZYVAL(ex) = ti {
@@ -108,7 +102,7 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
 }
 
 pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed_args: &usize, tok: &Token) -> Result<Value, Value> {
-    eval.env.create_scope();
+    eval.create_scope_lazily();
     if tok.type_equals(&ATAT) {
         // assoc_arg @@ it-expression. another operation takes over, binding one iteration of params at a time.
         let arg = eval.val_queue.pop_back().unwrap();
@@ -116,12 +110,12 @@ pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed
             ASSOCIATIONVAL(_) => {
                 Operation::from_type(ITERATIVE_PARAM_BINDER(
                     0, Box::from(arg), Box::from(eval.exp_queue.back().unwrap().clone())))
-                    .value(eval)
+                    .value(eval, &NOTAVAL)
             }
             STRINGVAL(_) => {
                 Operation::from_type(ITERATIVE_PARAM_BINDER(
                     0, Box::from(arg), Box::from(eval.exp_queue.back().unwrap().clone())))
-                    .value(eval)
+                    .value(eval, &NOTAVAL)
             }
             _ => eval.error(EVAL_ITER_APPL_ON_NONITER(arg))
         });

@@ -18,7 +18,7 @@ pub enum OperationType {
     LOGIC_OP(Token),
     UNARY_OP(Token),
     VARASSIGN_OP(String, Token),
-    SCOPE_DURATION_COUNTDOWN_OP(usize, bool),
+    SCOPE_DURATION_COUNTDOWN_OP(usize),
     RETURN_CLEANUP,
     ASSOC_GROWER_OP(ValueMap, usize, bool),
     PULL_OP(Token),
@@ -40,7 +40,7 @@ pub struct Operation {
 impl Operation {
     pub fn needed_to_keep_values(&self) -> usize {
         match self.otype {
-            SCOPE_DURATION_COUNTDOWN_OP(_, _) => 1,
+            SCOPE_DURATION_COUNTDOWN_OP(_) => 0,
             _ => self.needed_to_see_values
         }
     }
@@ -53,7 +53,7 @@ impl Operation {
             LOGIC_OP(_) => 2,
             UNARY_OP(_) => 1,
             VARASSIGN_OP(_, _) => 1,
-            SCOPE_DURATION_COUNTDOWN_OP(n, _) => *n,
+            SCOPE_DURATION_COUNTDOWN_OP(n) => *n,
             RETURN_CLEANUP => 1,
             ASSOC_GROWER_OP(_, _, _) => 1,
             PULL_OP(_) => 2,
@@ -78,12 +78,11 @@ impl Operation {
         eval.val_queue.truncate(1 + eval.val_queue.len() - self.needed_to_keep_values());
         // trim expression that would've calculated the rest of the needed values.
         eval.exp_queue.truncate(1 + eval.exp_queue.len() + self.seen_values - self.needed_to_see_values);
-        // +1 in both cases because the expr that caused the early dropping should be counted.
     }
 
     pub fn set_coord(&mut self, coord: &Coord) { self.coord = (*coord).clone() }
 
-    pub fn value(&self, eval: &mut Evaluator) -> Value {
+    pub fn value(&self, eval: &mut Evaluator, previous_val: &Value) -> Value {
         match &self.otype {
             BINARY_OP(tok) => { lib::binary_op(eval, tok) }
             OPTIONAL_OP => { OPTIONVAL(Some(Box::from(eval.val_queue.pop_back().unwrap()))) }
@@ -125,17 +124,15 @@ impl Operation {
             VARASSIGN_OP(varname, op) => {
                 eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op)
             }
-            SCOPE_DURATION_COUNTDOWN_OP(_, should_destroy_scope) => {
-                if *should_destroy_scope {
-                    eval.env.destroy_scope();
-                }
-                eval.val_queue.pop_back().unwrap()
+            SCOPE_DURATION_COUNTDOWN_OP(_) => {
+                eval.env.destroy_scope();
+                previous_val.to_owned()
             }
             RETURN_CLEANUP => {
-                let return_val = eval.val_queue.pop_back().unwrap();
+                let return_val = eval.val_queue.pop_back().unwrap_or(previous_val.to_owned());
                 while let Some(op) = eval.op_queue.pop_back() {
                     op.flush(eval);
-                    if let SCOPE_DURATION_COUNTDOWN_OP(_, _) = op.otype { break; }
+                    if let SCOPE_DURATION_COUNTDOWN_OP(_) = op.otype { break; }
                 }
                 // if, after having exited block, we were also inside an @@ application, exit from that as well.
                 // the exited iteration was also enqueuing 1 exp and 1 val.

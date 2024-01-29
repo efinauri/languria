@@ -21,7 +21,7 @@ pub enum Expression {
     GROUPING(Box<Expression>),
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW(Coord, String),
-    BLOCK(Vec<Box<Expression>>, bool),
+    BLOCK(Vec<Box<Expression>>),
     APPLIED_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>),
@@ -41,18 +41,10 @@ pub enum Expression {
 }
 
 impl Expression {
-    fn into_function_body(self) -> Box<Expression> {
-        if let BLOCK(v, _) = &self {
-            Box::new(BLOCK(v.to_owned(), true))
-        } else { Box::new(self) }
-    }
     pub fn ok_or_var_with_applicable(&self, eval: &mut Evaluator) -> Box<Expression> {
         if let VAR_RAW(_, varname) = &self {
-            if let Value::LAMBDAVAL { params, mut body }
+            if let Value::LAMBDAVAL { params, body }
                 = eval.read_var(varname) {
-                if let BLOCK(v, _) = *body {
-                    body = Box::from(BLOCK(v, true))
-                }
                 return Box::from(APPLICABLE_EXPR { params, body });
             }
         }
@@ -73,7 +65,7 @@ impl Expression {
             VAR_RAW(coord, _) => &coord,
 
             ARGS(exprs) |
-            BLOCK(exprs, _) => exprs.first().map(|ex| ex.coord()).unwrap_or(&Coord::zero()),
+            BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&Coord::zero()),
 
             APPLICABLE_EXPR { params: expr, .. } |
             PUSH_EXPR { obj: expr, .. } |
@@ -93,7 +85,7 @@ impl Expression {
     pub fn last_instruction(&self) -> &Expression {
         match self {
             RETURN_EXPR(e) => e.last_instruction(),
-            BLOCK(exprs, _) => exprs.last().map(|e| e.last_instruction()).unwrap_or(self),
+            BLOCK(exprs) => exprs.last().map(|e| e.last_instruction()).unwrap_or(self),
             _ => self
         }
     }
@@ -110,7 +102,7 @@ impl Expression {
             (RETURN_EXPR(expr), other) => {
                 expr.type_equals(other)
             }
-            (BLOCK(exprs, _), _) => {
+            (BLOCK(exprs), _) => {
                 match exprs.last() {
                     None => { false }
                     Some(e) => { e.type_equals(other) }
@@ -202,7 +194,7 @@ impl Parser<'_> {
         if let ARGS(_) = expr {
             APPLICABLE_EXPR {
                 params: Box::new(expr),
-                body: self.build_expression().into_function_body(),
+                body: Box::new(self.build_expression()),
             }
         } else { expr }
     }
@@ -356,8 +348,8 @@ impl Parser<'_> {
                     body: Box::new(self.build_expression()),
                 }
             };
-            if let BLOCK(v, _) = body {
-                body = BLOCK(v, true)
+            if let BLOCK(v) = body {
+                body = BLOCK(v)
             }
             expr = APPLIED_EXPR {
                 arg: Box::new(expr),
@@ -460,7 +452,7 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACE);
         self.cursor.step_fwd();
-        BLOCK(exprs, false)
+        BLOCK(exprs)
     }
 
     fn process_assignment(&mut self, str: &String) -> Expression {

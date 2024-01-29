@@ -4,8 +4,6 @@ mod tests {
     use std::io::Read;
     use std::path::PathBuf;
 
-    use languria::errors::TerminationPolicy;
-
     #[test]
     fn readme() {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -28,8 +26,6 @@ mod tests {
             }
         }
         dbg!(&instructions);
-        let mut es = languria::errors::ErrorScribe::from_termination_policy(TerminationPolicy::STRICT);
-        let mut env = languria::environment::Environment::new();
         for ins in instructions {
             dbg!(&ins);
             // languria::user_io::interpret_instructions(&mut es, ins.to_string(), &mut env, false);

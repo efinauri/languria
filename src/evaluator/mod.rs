@@ -27,6 +27,7 @@ pub struct Evaluator<'a> {
     val_queue: VecDeque<Value>,
     scribe: &'a mut ErrorScribe,
     env: &'a mut Environment,
+    is_curr_scope_recycled: usize,
 }
 
 #[derive(PartialEq)]
@@ -53,6 +54,9 @@ impl<'a> Evaluator<'a> {
         }
         if !self.val_queue.is_empty() {
             error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
+            for val in &self.val_queue {
+                error!("\t{:?}", val);
+            }
         }
         if !self.scribe.has_errors() &&
             self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
@@ -73,6 +77,7 @@ impl<'a> Evaluator<'a> {
             val_queue: Default::default(),
             scribe,
             env,
+            is_curr_scope_recycled: 0,
         }
     }
 
@@ -86,11 +91,13 @@ impl<'a> Evaluator<'a> {
 
     fn update_waiting_op(&mut self, ret: &mut Value) {
         let op = self.op_queue.back_mut().unwrap();
-        if op.needed_to_keep_values() > op.seen_values { self.val_queue.push_back(ret.clone()); }
+        if op.needed_to_keep_values() > op.seen_values {
+            self.val_queue.push_back(ret.clone());
+        }
         op.seen_values += 1;
         if self.op_status() == READY {
             let op = self.op_queue.pop_back().unwrap();
-            let val = op.value(self);
+            let val = op.value(self, &ret);
             self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
         }
     }
@@ -194,17 +201,7 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 Expression::APPLIED_EXPR { arg, op, body } => {
-                    // tail call optimization: check if this is the last instruction of a block.
-                    if let Some(op) = self.op_queue.back() {
-                        if let SCOPE_DURATION_COUNTDOWN_OP(n, _) = op.otype {
-                            if op.seen_values + 1 == n {
-                                self.op_queue.pop_back();
-                                // TODO might be needed to flush everything instead of just popping?
-                                // self.op_queue.pop_back().unwrap().flush(self);
-                                self.env.recycle_current_scope = true;
-                            }
-                        }
-                    }
+                    self.create_scope_lazily();
                     let mut args_size = 1;
                     if let Expression::ARGS(exprs) = arg.deref() {
                         args_size = exprs.len();
@@ -238,14 +235,10 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(RETURN_CLEANUP));
                     NOTAVAL
                 }
-                Expression::BLOCK(exprs, is_function_body) => {
+                Expression::BLOCK(exprs) => {
                     for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
-                    if !is_function_body {
-                        self.env.create_scope();
-                    }
-                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(
-                        exprs.len(), !is_function_body)
-                    ));
+                    self.create_scope_lazily();
+                    aux_op_queue.push_front(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(exprs.len())));
                     NOTAVAL
                 }
                 Expression::GROUPING(expr) => {
@@ -273,8 +266,8 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 Expression::UNARY { op, expr } => {
-                    aux_exp_queue.push_back(*expr);
-                    aux_op_queue.push_back(Operation::from_type(UNARY_OP(op)));
+                    aux_exp_queue.push_front(*expr);
+                    aux_op_queue.push_front(Operation::from_type(UNARY_OP(op)));
                     NOTAVAL
                 }
 //                     if op.ttype == BANGBANG {
@@ -324,5 +317,18 @@ impl<'a> Evaluator<'a> {
         }
         self.was_evaluation_consistent();
         ret
+    }
+
+    fn create_scope_lazily(&mut self) {
+        // if the last instruction of a block needs to create a scope, it can instead just reuse the current block.
+        let last_val = self.is_curr_scope_recycled;
+        if let Some(op) = self.op_queue.back() {
+            match op.otype {
+                SCOPE_DURATION_COUNTDOWN_OP(n) => { self.is_curr_scope_recycled += (op.seen_values + 1 == n) as usize; }
+                AT_APPLICABLE_RESOLVER_OP => { self.is_curr_scope_recycled += 1; }
+                _ => {}
+            }
+            if self.is_curr_scope_recycled == last_val { self.env.create_scope(); }
+        }
     }
 }

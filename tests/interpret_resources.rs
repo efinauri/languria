@@ -26,7 +26,7 @@ mod tests {
             let mut contents = String::new();
             File::open(f).unwrap().read_to_string(&mut contents).unwrap();
             assert!(interpret_instructions(
-                &mut scribe, contents, &mut env, true));
+                &mut scribe, contents, &mut env, false));
         }
     }
 }

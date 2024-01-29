@@ -12,7 +12,7 @@ use crate::parser::Expression;
 use crate::parser::Expression::LITERAL;
 use crate::user_io::Red;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
     INTEGERVAL(i64),
     FLOATVAL(f64),
@@ -132,19 +132,6 @@ impl Ord for Value {
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.display_and_debug(f)
-    }
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.display_and_debug(f)
-    }
-}
-
-#[allow(non_snake_case)]
-impl Value {
-    fn display_and_debug(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             LAZYVAL(_) => { f.write_str("(not yet evaluated)") }
             INTEGERVAL(int) => { f.write_str(&*int.to_string()) }
@@ -174,7 +161,10 @@ impl Value {
             UNDERSCOREVAL => f.write_str("_")
         }
     }
+}
 
+#[allow(non_snake_case)]
+impl Value {
     pub fn type_equals(&self, other: &Value) -> bool {
         match (self, other) {
             (INTEGERVAL(_), INTEGERVAL(_)) |
