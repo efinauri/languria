@@ -1,6 +1,8 @@
 fn = |n| {
     a = |n| {
         b = |n| {
+            e = |pewn| pewn
+            d = |wer| wer
             c = |n| n * 3
             n @ c
         }
