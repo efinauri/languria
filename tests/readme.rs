@@ -25,7 +25,6 @@ mod tests {
                 partial_instruction.push('\n');
             }
         }
-        dbg!(&instructions);
         for ins in instructions {
             dbg!(&ins);
             // languria::user_io::interpret_instructions(&mut es, ins.to_string(), &mut env, false);

@@ -134,6 +134,13 @@ impl Operation {
                     op.flush(eval);
                     if let SCOPE_DURATION_COUNTDOWN_OP(_) = op.otype { break; }
                 }
+                // dbg!(&eval.op_queue.len(), &eval.is_curr_scope_recycled);
+                // TODO a solution that doesn't let these ops stack would be better.
+                // this works because anytime we recycle a scope we append an extra scope closure operation.
+                // for a single function call, this scope recycling is done twice, one when its functional scope would
+                // be opened and one for when the scope for its body would.
+                eval.op_queue.truncate(2 * eval.op_queue.len() - eval.times_curr_scope_was_recycled);
+
                 // if, after having exited block, we were also inside an @@ application, exit from that as well.
                 // the exited iteration was also enqueuing 1 exp and 1 val.
                 if let Some(op) = eval.op_queue.back() {

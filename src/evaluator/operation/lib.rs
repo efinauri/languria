@@ -51,10 +51,7 @@ pub fn at_applicable_resolver_op(eval: &mut Evaluator) -> Value {
     let body = if let LAMBDAVAL { params: _params, body } = body_val {
         body
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
-    if !body.ok_or_var_with_applicable(eval)
-        .is_tail_call_optimizable() {
-        eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)));
-    }
+    eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(1)));
     eval.exp_queue.push_back(*body);
     NOTAVAL
 }

@@ -27,7 +27,7 @@ pub struct Evaluator<'a> {
     val_queue: VecDeque<Value>,
     scribe: &'a mut ErrorScribe,
     env: &'a mut Environment,
-    is_curr_scope_recycled: usize,
+    times_curr_scope_was_recycled: usize,
 }
 
 #[derive(PartialEq)]
@@ -77,7 +77,7 @@ impl<'a> Evaluator<'a> {
             val_queue: Default::default(),
             scribe,
             env,
-            is_curr_scope_recycled: 0,
+            times_curr_scope_was_recycled: 0,
         }
     }
 
@@ -321,14 +321,14 @@ impl<'a> Evaluator<'a> {
 
     fn create_scope_lazily(&mut self) {
         // if the last instruction of a block needs to create a scope, it can instead just reuse the current block.
-        let last_val = self.is_curr_scope_recycled;
+        let last_val = self.times_curr_scope_was_recycled;
         if let Some(op) = self.op_queue.back() {
             match op.otype {
-                SCOPE_DURATION_COUNTDOWN_OP(n) => { self.is_curr_scope_recycled += (op.seen_values + 1 == n) as usize; }
-                AT_APPLICABLE_RESOLVER_OP => { self.is_curr_scope_recycled += 1; }
+                SCOPE_DURATION_COUNTDOWN_OP(n) => { self.times_curr_scope_was_recycled += (op.seen_values + 1 == n) as usize; }
+                AT_APPLICABLE_RESOLVER_OP => { self.times_curr_scope_was_recycled += 1; }
                 _ => {}
             }
-            if self.is_curr_scope_recycled == last_val { self.env.create_scope(); }
+            if self.times_curr_scope_was_recycled == last_val { self.env.create_scope(); }
         }
     }
 }

@@ -46,6 +46,7 @@ mod tests {
                 val_queue: Default::default(),
                 scribe,
                 env,
+                times_curr_scope_was_recycled: 0,
             }
         }
     }

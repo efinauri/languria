@@ -32,6 +32,9 @@ impl Environment {
     }
 
     pub fn destroy_scope(&mut self) {
+        if self.scopes.len() == 1 {
+            dbg!("not good");
+        }
         println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
