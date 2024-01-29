@@ -53,8 +53,10 @@ pub fn at_applicable_resolver_op(eval: &mut Evaluator) -> Value {
         body
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
     let tco = body.is_tail_call_optimizable();
+    // if the tail call is being optimized, we don't need to store the previous iteration's value.
+    if tco { eval.val_queue.pop_back(); }
     eval.op_queue.push_back(Operation::from_type(SCOPE_DURATION_COUNTDOWN_OP(
-        1, !body.is_tail_call_optimizable())));
+        1, !tco)));
     eval.exp_queue.push_back(*body);
     NOTAVAL
 }

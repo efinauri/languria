@@ -36,8 +36,32 @@ enum OperationStatus {
     READY,
 }
 
-
 impl<'a> Evaluator<'a> {
+    pub fn was_evaluation_consistent(&self) -> bool {
+        let mut all_good = false;
+        if self.scribe.has_errors() {
+            error!("*** SCRIBE HAS ERRORS! ***\n");
+        }
+        if self.env.scopes.len() != 1 {
+            error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
+        }
+        if !self.op_queue.is_empty() {
+            error!("*** UNCONSUMED OPS! ***\n{:?}\n\n", &self.op_queue);
+        }
+        if !self.exp_queue.is_empty() {
+            error!("*** UNCONSUMED EXPS! ***\n{:?}\n\n", &self.exp_queue);
+        }
+        if !self.val_queue.is_empty() {
+            error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
+        }
+        if !self.scribe.has_errors() &&
+            self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
+            all_good = true;
+            error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
+        }
+        all_good
+    }
+
     pub fn new(
         exprs: &'a mut VecDeque<Expression>,
         scribe: &'a mut ErrorScribe,
@@ -108,7 +132,7 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn value(&mut self) -> Value {
-        env_logger::init();
+        let _ = env_logger::try_init();
         // if you insert directly to the evaluator you have to be careful about reversing the order of the inserted items.
         // pushing front to these queries and merging them with the evaluator at the end of the iteration is simpler
         // to reason about
@@ -298,21 +322,7 @@ impl<'a> Evaluator<'a> {
 
             self.update_waiting_op(&mut ret);
         }
-        if self.env.scopes.len() != 1 {
-            error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
-        }
-        if !self.op_queue.is_empty() {
-            error!("*** UNCONSUMED OPS! ***\n{:?}\n\n", &self.op_queue);
-        }
-        if !self.exp_queue.is_empty() {
-            error!("*** UNCONSUMED EXPS! ***\n{:?}\n\n", &self.exp_queue);
-        }
-        if !self.val_queue.is_empty() {
-            error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
-        }
-        if self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
-            error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
-        }
+        self.was_evaluation_consistent();
         ret
     }
 }

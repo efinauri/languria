@@ -126,8 +126,9 @@ impl Operation {
                 eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op)
             }
             SCOPE_DURATION_COUNTDOWN_OP(_, should_destroy_scope) => {
-                // if *should_destroy_scope {
-                //     eval.env.destroy_scope(); }
+                if *should_destroy_scope {
+                    eval.env.destroy_scope();
+                }
                 eval.val_queue.pop_back().unwrap()
             }
             RETURN_CLEANUP => {
@@ -145,7 +146,7 @@ impl Operation {
                         eval.val_queue.pop_back();
                     }
                 }
-                // eval.env.destroy_scope();
+                eval.env.destroy_scope();
                 return_val
             }
             ASSOC_GROWER_OP(map, n, lazy) => {

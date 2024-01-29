@@ -28,7 +28,7 @@ impl Environment {
 
     pub fn create_scope(&mut self) {
         if self.recycle_current_scope {
-            self.recycle_current_scope == false;
+            self.recycle_current_scope = false;
             return;
         }
         println!("\t\tcreate [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());

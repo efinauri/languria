@@ -79,7 +79,12 @@ pub fn serve_repl() {
     }
 }
 
-pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, env: &mut Environment, verbose: bool) {
+pub fn interpret_instructions(
+    scribe: &mut ErrorScribe,
+    instructions: String,
+    env: &mut Environment,
+    verbose: bool
+) -> bool {
     let mut lexer = lexer::Lexer::from_string(instructions, scribe);
     let tokens = lexer.produce_tokens();
     if verbose {
@@ -91,9 +96,10 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
     let mut parser = parser::Parser::from_tokens(tokens.to_owned(), scribe);
     parser.parse();
     let mut exprs = parser.into_expressions();
-    if scribe.has_errors() || exprs.is_empty() {
+    if exprs.is_empty() { return false; }
+    if scribe.has_errors() {
         scribe.clear_errors();
-        return;
+        return false;
     }
     if verbose {
         println!("\nthis is parsed as:\n");
@@ -101,7 +107,6 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
             println!("{:#?}", ex);
         }
     }
-
 
     let mut evaluator = Evaluator::new(&mut exprs, scribe, env);
     let value = evaluator.value();
@@ -111,6 +116,7 @@ pub fn interpret_instructions(scribe: &mut ErrorScribe, instructions: String, en
         stdout().flush().unwrap();
         println!("\t{}", &value);
     }
+    return evaluator.was_evaluation_consistent();
 }
 
 pub trait Red { fn red(&self) -> Self; }

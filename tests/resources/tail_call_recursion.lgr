@@ -1,0 +1,10 @@
+fn = |n| {
+    loop = || {
+        n == 0 and return n
+        $n -= 1
+        _@ loop
+    }
+    _@ loop
+}
+
+5 @ fn
