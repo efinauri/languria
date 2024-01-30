@@ -87,6 +87,7 @@ pub fn interpret_instructions(
 ) -> bool {
     let mut lexer = lexer::Lexer::from_string(instructions, scribe);
     let tokens = lexer.produce_tokens();
+    if tokens.is_empty() { return false; }
     if verbose {
         println!("produced following tokens: ");
         tokens.iter().for_each(|tok| println!("{}", tok));
@@ -98,6 +99,8 @@ pub fn interpret_instructions(
     let mut exprs = parser.into_expressions();
     if exprs.is_empty() { return false; }
     if scribe.has_errors() {
+        dbg!("parsing finished with errors.");
+        dbg!(&scribe);
         scribe.clear_errors();
         return false;
     }

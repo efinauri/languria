@@ -33,6 +33,7 @@ pub enum Expression {
     APPLICABLE_EXPR { params: Box<Expression>, body: Box<Expression> },
     OPTION_EXPR(Box<Expression>),
     UNDERSCORE_EXPR(Coord),
+    PRINT_EXPR(Box<Expression>, Option<String>),
 
     NOTANEXPR,
     // when an expr is desugared into a bigger one this is a way to evaluate once, and carry around,
@@ -67,6 +68,7 @@ impl Expression {
             ARGS(exprs) |
             BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&Coord::zero()),
 
+            PRINT_EXPR(expr, _) |
             APPLICABLE_EXPR { params: expr, .. } |
             PUSH_EXPR { obj: expr, .. } |
             GROUPING(expr) |
@@ -146,7 +148,7 @@ const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_MED_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 1] = [POW];
-const UNARY_TOKENS: [TokenType; 4] = [NOT, BANGBANG, MINUS, DOLLAR];
+const UNARY_TOKENS: [TokenType; 3] = [NOT, BANGBANG, MINUS];
 const POSTFIX_UNARY_TOKENS: [TokenType; 2] = [ASBOOL, EXTRACT];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
@@ -317,23 +319,31 @@ impl Parser<'_> {
 
     fn unary(&mut self) -> Expression {
         if self.curr_in(&UNARY_TOKENS) {
-            let seq = [DOLLAR, LT, IDENTIFIER(String::new()), GT];
-            if self.curr_is_seq(&seq) {
-                let op = self.read_curr().clone();
-                self.cursor.mov(2);
-                let value = self.read_curr().clone();
-                self.cursor.mov(2);
-                return BINARY { op, rhs: Box::new(LITERAL(value)), lhs: Box::new(self.unary()) };
-            }
             self.cursor.step_fwd();
             return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
         }
-        let mut expr = self.application();
-        if self.curr_in(&POSTFIX_UNARY_TOKENS) {
+        let mut expr = self.print();
+        while self.curr_in(&POSTFIX_UNARY_TOKENS) {
             self.cursor.step_fwd();
             expr = UNARY { op: self.read_prev().clone(), expr: Box::new(expr) }
         }
         expr
+    }
+
+    fn print(&mut self) -> Expression {
+        if self.curr_in(&[DOLLAR]) {
+            self.cursor.step_fwd();
+            // tagged print: $<a>3  // prints a: 3
+            return if self.curr_is_seq(&[LT, IDENTIFIER(String::new()), GT]) {
+                self.cursor.step_fwd();
+                let tag = if let IDENTIFIER(tag) = &self.read_curr().ttype
+                { tag.to_owned() } else { return NOTANEXPR; };
+                self.cursor.mov(2);
+                PRINT_EXPR(Box::new(self.application()), Some(tag))
+                // normal print
+            } else { PRINT_EXPR(Box::new(self.application()), None) }
+        }
+        self.application()
     }
 
     fn application(&mut self) -> Expression {

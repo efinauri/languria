@@ -7,9 +7,7 @@ use std::ops::{Deref, Neg};
 use crate::environment::Environment;
 use crate::environment::Value::{ERRVAL, NOTAVAL};
 use crate::environment::value::Value::*;
-use crate::lexer::TokenType::IDENTIFIER;
 use crate::parser::Expression;
-use crate::parser::Expression::LITERAL;
 use crate::user_io::Red;
 
 #[derive(Clone, Debug)]
@@ -208,25 +206,13 @@ impl Value {
         }
     }
 
-    pub fn print_it(&self, curr_line: usize, env: &mut Environment, tag: Option<&Box<Expression>>) {
+    pub fn print_it(&self, env: &mut Environment, tag: Option<String>) {
         let tag = match tag {
-            Some(boxx)
-            => {
-                match (**boxx).clone() {
-                    LITERAL(value) =>
-                        match value.ttype {
-                            IDENTIFIER(str) => {
-                                format!("{}: ", str)
-                            }
-                            _ => String::new()
-                        }
-                    _ => String::new()
-                }
-            }
-            _ => String::new()
+            None => { String::new() }
+            Some(str) => {format!("{}: ", str)}
         };
-        let start_new_line = env.last_print_line != curr_line;
-        env.last_print_line = curr_line;
+        let start_new_line = env.last_print_line != env.coord.row;
+        env.last_print_line = env.coord.row;
         if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
     }
 

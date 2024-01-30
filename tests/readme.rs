@@ -3,6 +3,10 @@ mod tests {
     use std::fs::File;
     use std::io::Read;
     use std::path::PathBuf;
+    use languria::environment::Environment;
+    use languria::errors::ErrorScribe;
+    use languria::errors::TerminationPolicy::STRICT;
+    use languria::user_io::interpret_instructions;
 
     #[test]
     fn readme() {
@@ -25,9 +29,11 @@ mod tests {
                 partial_instruction.push('\n');
             }
         }
+        let mut es = ErrorScribe::from_termination_policy(STRICT);
+        let mut env = Environment::new();
         for ins in instructions {
             dbg!(&ins);
-            // languria::user_io::interpret_instructions(&mut es, ins.to_string(), &mut env, false);
+            assert!(interpret_instructions(&mut es, ins.to_string(), &mut env, false))
         }
     }
 }

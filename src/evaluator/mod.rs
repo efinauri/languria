@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
-use std::process::exit;
 
 use log::error;
 
@@ -153,6 +152,11 @@ impl<'a> Evaluator<'a> {
             // dbg!(&self.exp_queue);
             self.env.coord = expr.coord().clone();
             ret = match expr {
+                Expression::PRINT_EXPR(expr, tag) => {
+                    aux_exp_queue.push_front(*expr);
+                    aux_op_queue.push_front(Operation::from_type(PRINT_OP(tag)));
+                    NOTAVAL
+                }
                 Expression::VAR_RAW(_, varname) => { self.env.read(&varname, self.scribe).clone() }
                 Expression::ARGS(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
                 Expression::APPLICABLE_EXPR { params: arg, body } => {
@@ -311,7 +315,7 @@ impl<'a> Evaluator<'a> {
                     &self.val_queue.back(),
                     &self.op_queue.back(),
                     &self.exp_queue.back());
-                exit(1);
+                self.scribe.enact_termination_policy();
             }
 
             self.update_waiting_op(&mut ret);

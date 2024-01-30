@@ -27,6 +27,7 @@ pub enum OperationType {
     ASSOC_PUSHER_OP,
     ITERATIVE_PARAM_BINDER(usize, Box<Value>, Box<Expression>),
     TI_REBINDER_OP,
+    PRINT_OP(Option<String>),
 }
 
 #[derive(Debug)]
@@ -62,6 +63,7 @@ impl Operation {
             ASSOC_PUSHER_OP => 3,
             ITERATIVE_PARAM_BINDER(_, _, _) => 1,
             TI_REBINDER_OP => 1,
+            PRINT_OP(_) => 1,
         };
         Operation {
             seen_values: 0,
@@ -84,6 +86,11 @@ impl Operation {
 
     pub fn value(&self, eval: &mut Evaluator, previous_val: &Value) -> Value {
         match &self.otype {
+            PRINT_OP(tag) => {
+                let val = eval.val_queue.pop_back().unwrap();
+                val.print_it(eval.env, tag.to_owned());
+                val.clone()
+            }
             BINARY_OP(tok) => { lib::binary_op(eval, tok) }
             OPTIONAL_OP => { OPTIONVAL(Some(Box::from(eval.val_queue.pop_back().unwrap()))) }
             LAZY_LOGIC_OP(tok) => {
@@ -109,10 +116,6 @@ impl Operation {
                     ASBOOL => { val.as_bool_val() }
                     NOT => { val.not_it() }
                     MINUS => { val.minus_it() }
-                    DOLLAR => {
-                        val.print_it(tok.coord.row, eval.env, None);
-                        val.clone()
-                    }
                     _ => {
                         eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![val.clone()]))
                     }
