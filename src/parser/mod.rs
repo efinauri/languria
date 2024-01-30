@@ -24,9 +24,9 @@ pub enum Expression {
     BLOCK(Vec<Box<Expression>>),
     APPLIED_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
     RETURN_EXPR(Box<Expression>),
-    ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>),
-    LIST_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>> },
-    SET_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>> },
+    ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>, bool),
+    LIST_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>>, is_lazy: bool },
+    SET_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>>, is_lazy: bool },
     PULL_EXPR { source: Box<Expression>, op: Token, key: Box<Expression> },
     PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
@@ -75,7 +75,7 @@ impl Expression {
             OPTION_EXPR(expr) |
             RETURN_EXPR(expr) => expr.coord(),
 
-            ASSOCIATION_EXPR(v) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&Coord::zero()),
+            ASSOCIATION_EXPR(v, _) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&Coord::zero()),
 
             LIST_DECLARATION_EXPR { .. } |
             SET_DECLARATION_EXPR { .. } |
@@ -118,7 +118,7 @@ impl Expression {
             (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
             (VAR_RAW(_, _), VAR_RAW(_, _)) |
             (APPLIED_EXPR { .. }, APPLIED_EXPR { .. }) |
-            (ASSOCIATION_EXPR(_), ASSOCIATION_EXPR(_)) |
+            (ASSOCIATION_EXPR(_, _), ASSOCIATION_EXPR(_, _)) |
             (PULL_EXPR { .. }, PULL_EXPR { .. }) |
             (PUSH_EXPR { .. }, PUSH_EXPR { .. }) |
             (UNDERSCORE_EXPR(..), UNDERSCORE_EXPR(..)) |
@@ -148,7 +148,7 @@ const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
 const MATH_MED_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 1] = [POW];
-const UNARY_TOKENS: [TokenType; 3] = [NOT, BANGBANG, MINUS];
+const UNARY_TOKENS: [TokenType; 2] = [NOT, MINUS];
 const POSTFIX_UNARY_TOKENS: [TokenType; 2] = [ASBOOL, EXTRACT];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
@@ -175,6 +175,7 @@ impl Parser<'_> {
         if self.tokens.is_empty() { return; }
         while self.can_consume() {
             let expr = self.build_expression();
+            dbg!(&expr);
             self.exprs.push_front(expr);
         }
     }
@@ -341,7 +342,7 @@ impl Parser<'_> {
                 self.cursor.mov(2);
                 PRINT_EXPR(Box::new(self.application()), Some(tag))
                 // normal print
-            } else { PRINT_EXPR(Box::new(self.application()), None) }
+            } else { PRINT_EXPR(Box::new(self.application()), None) };
         }
         self.application()
     }
@@ -378,21 +379,30 @@ impl Parser<'_> {
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
+        // check for composite tokens first
+        if self.curr_is_seq(&[BANGBANG, LIST]) {
+            self.cursor.step_fwd();
+            return self.build_association_declaration(AssociationState::LIST, false);
+        } else if self.curr_is_seq(&[BANGBANG, SET]) {
+            self.cursor.step_fwd();
+            return self.build_association_declaration(AssociationState::SET, false);
+        } else if self.curr_is_seq(&[BANGBANG, LBRACKET]) {
+            self.cursor.step_fwd();
+            return self.process_association(false); }
+
         let tok = &self.tokens.get(self.cursor.get()).unwrap().clone();
         return match &tok.ttype {
             LIST => {
-                self.cursor.step_fwd();
-                self.build_association_declaration(true)
+                self.build_association_declaration(AssociationState::LIST, true)
             }
             SET => {
-                self.cursor.step_fwd();
-                self.build_association_declaration(false)
+                self.build_association_declaration(AssociationState::SET, true)
             }
             QUESTIONMARK => {
                 self.cursor.step_fwd();
                 OPTION_EXPR(Box::new(self.primary()))
             }
-            LBRACKET => { self.process_association() }
+            LBRACKET => { self.process_association(true) }
             IDENTIFIER(str) => { self.process_assignment(&str) }
             LBRACE => { self.process_code_block() }
             RETURN => {
@@ -431,7 +441,7 @@ impl Parser<'_> {
         };
     }
 
-    fn process_association(&mut self) -> Expression {
+    fn process_association(&mut self, is_lazy: bool) -> Expression {
         self.cursor.step_fwd();
         let mut keys = vec![];
         let mut vals = vec![];
@@ -448,7 +458,7 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
-        ASSOCIATION_EXPR(keys.iter().map(|k| k.to_owned()).zip(vals).collect())
+        ASSOCIATION_EXPR(keys.iter().map(|k| k.to_owned()).zip(vals).collect(), is_lazy)
     }
 
     fn process_code_block(&mut self) -> Expression {
@@ -517,7 +527,8 @@ impl Parser<'_> {
         }
         Some(items)
     }
-    fn build_association_declaration(&mut self, list: bool) -> Expression {
+    fn build_association_declaration(&mut self, state: AssociationState, is_lazy: bool) -> Expression {
+        self.cursor.step_fwd();
         let mut input_state = InputType::ITEMS;
         let expr = self.build_expression();
         if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
@@ -536,6 +547,8 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
-        if list { LIST_DECLARATION_EXPR { input_type: input_state, items } } else { SET_DECLARATION_EXPR { input_type: input_state, items } }
+        if state == AssociationState::LIST {
+            LIST_DECLARATION_EXPR { input_type: input_state, items, is_lazy }
+        } else { SET_DECLARATION_EXPR { input_type: input_state, items, is_lazy } }
     }
 }

@@ -171,12 +171,12 @@ impl<'a> Evaluator<'a> {
                         NOTAVAL
                     }
                 }
-                Expression::SET_DECLARATION_EXPR { input_type, items } => {
-                    lib::desugar_association_declaration(AssociationState::SET, input_type, items,
+                Expression::SET_DECLARATION_EXPR { input_type, items, is_lazy } => {
+                    lib::desugar_association_declaration(AssociationState::SET, input_type, items, is_lazy,
                                                          self, &mut aux_exp_queue, &mut aux_op_queue)
                 }
-                Expression::LIST_DECLARATION_EXPR { input_type, items } => {
-                    lib::desugar_association_declaration(AssociationState::LIST, input_type, items,
+                Expression::LIST_DECLARATION_EXPR { input_type, items, is_lazy } => {
+                    lib::desugar_association_declaration(AssociationState::LIST, input_type, items, is_lazy,
                                                          self, &mut aux_exp_queue, &mut aux_op_queue)
                 }
                 Expression::PUSH_EXPR { obj, args } => {
@@ -225,9 +225,9 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(PULL_OP(op)));
                     NOTAVAL
                 }
-                Expression::ASSOCIATION_EXPR(pairs) => {
+                Expression::ASSOCIATION_EXPR(pairs, is_lazy) => {
                     aux_op_queue.push_front(Operation::from_type(
-                        ASSOC_GROWER_OP(ValueMap::new(), pairs.len(), true)));
+                        ASSOC_GROWER_SETUPPER_OP(ValueMap::new(), pairs.len(), is_lazy)));
                     for (k, v) in pairs {
                         aux_exp_queue.push_front(*k.clone());
                         aux_exp_queue.push_front(*v.clone());

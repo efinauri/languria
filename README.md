@@ -134,7 +134,7 @@ The postfix operator `?!` can be used to interpret a value as a boolean:
 "something"?! == true
 [1: 2]?! == true  // strings and associations are true when not empty
 ?_?! == false
-?"something"?! == true // option values evaluate to 3 if they contain a value
+?"something"?! == true // option values evaluate to true if they contain a value
 ```
 
 ### INTEGERS AND FLOATS

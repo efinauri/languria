@@ -20,7 +20,8 @@ pub enum OperationType {
     VARASSIGN_OP(String, Token),
     SCOPE_CLOSURE_OP(usize),
     RETURN_CLEANUP,
-    ASSOC_GROWER_OP(ValueMap, usize, bool),
+    ASSOC_GROWER_SETUPPER_OP(ValueMap, usize, bool),
+    ASSOC_GROWER_RESOLVER_OP(ValueMap, usize, bool),
     PULL_OP(Token),
     BIND_APPLICATION_ARGS_TO_PARAMS_OP(usize, Token),
     AT_APPLICABLE_RESOLVER_OP,
@@ -56,7 +57,8 @@ impl Operation {
             VARASSIGN_OP(_, _) => 1,
             SCOPE_CLOSURE_OP(n) => *n,
             RETURN_CLEANUP => 1,
-            ASSOC_GROWER_OP(_, _, _) => 1,
+            ASSOC_GROWER_SETUPPER_OP(_, _, _) => 1,
+            ASSOC_GROWER_RESOLVER_OP(_, _, _) => 1,
             PULL_OP(_) => 2,
             BIND_APPLICATION_ARGS_TO_PARAMS_OP(n, _) => *n,
             AT_APPLICABLE_RESOLVER_OP => 1,
@@ -149,19 +151,26 @@ impl Operation {
                 eval.env.destroy_scope();
                 return_val
             }
-            ASSOC_GROWER_OP(map, n, lazy) => {
+            ASSOC_GROWER_SETUPPER_OP(map, n, is_lazy) => {
+                let resolver = Operation::from_type(ASSOC_GROWER_RESOLVER_OP(map.to_owned(), *n, *is_lazy));
+                // if lazy, don't need to evaluate value and can call resolver directly. else, first evaluate value.
+                if *is_lazy {
+                    eval.val_queue.push_back(LAZYVAL(Box::from(eval.exp_queue.pop_back().unwrap())));
+                    return resolver.value(eval, previous_val);
+                } else {
+                    eval.op_queue.push_back(Operation::from_type(ASSOC_GROWER_RESOLVER_OP(map.to_owned(), *n, *is_lazy)));
+                    NOTAVAL
+                }
+            }
+            ASSOC_GROWER_RESOLVER_OP(map, n, is_lazy) => {
                 let mut map = map.to_owned();
+                let v = eval.val_queue.pop_back().unwrap();
                 let k = eval.val_queue.pop_back().unwrap();
-                if *lazy {
-                    let v = LAZYVAL(Box::from(eval.exp_queue.pop_back().unwrap()));
-                    if k.type_equals(&UNDERSCOREVAL) {
-                        map.default = Some(Box::from(v.to_owned()));
-                    } else { map.insert(k, v); }
-                }
-                if *n == 1 {
-                    return ASSOCIATIONVAL(map);
-                }
-                eval.op_queue.push_back(Operation::from_type(ASSOC_GROWER_OP(map, n - 1, *lazy)));
+                if k.type_equals(&UNDERSCOREVAL) {
+                    map.default = Some(Box::from(v.to_owned()));
+                } else { map.insert(k, v); }
+                if *n <= 1 { return ASSOCIATIONVAL(map); }
+                eval.op_queue.push_back(Operation::from_type(ASSOC_GROWER_SETUPPER_OP(map, n - 1, *is_lazy)));
                 NOTAVAL
             }
             PULL_OP(tok) => { lib::pull_op(eval, tok) }

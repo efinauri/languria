@@ -62,7 +62,7 @@ use crate::environment::value::Value::NOTAVAL;
 use crate::errors::ErrorType::EVAL_INVALID_RANGE;
 use crate::evaluator::Evaluator;
 use crate::evaluator::operation::Operation;
-use crate::evaluator::operation::OperationType::ASSOC_GROWER_OP;
+use crate::evaluator::operation::OperationType::ASSOC_GROWER_SETUPPER_OP;
 use crate::lexer::{Token, TokenType};
 use crate::parser::{AssociationState, Expression, InputType};
 
@@ -102,6 +102,7 @@ pub fn desugar_association_declaration(
     association_state: AssociationState,
     input_type: InputType,
     items: Vec<Box<Expression>>,
+    is_lazy: bool,
     eval: &mut Evaluator,
     exp_queue: &mut VecDeque<Expression>,
     op_queue: &mut VecDeque<Operation>,
@@ -109,7 +110,7 @@ pub fn desugar_association_declaration(
     let items = if let Some(it) = build_items_vec(input_type, items)
     { it } else { return eval.error(EVAL_INVALID_RANGE); };
     op_queue.push_front(Operation::from_type(
-        ASSOC_GROWER_OP(ValueMap::new(), items.len(), true)
+        ASSOC_GROWER_SETUPPER_OP(ValueMap::new(), items.len(), is_lazy)
     ));
     for (it, i) in items.iter().zip(0..) {
         if association_state == AssociationState::LIST {

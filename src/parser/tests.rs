@@ -183,7 +183,6 @@ mod tests {
         let mut es = ErrorScribe::debug();
         for (op_tok, idx) in vec![
             Token::debug(NOT),
-            Token::debug(DOLLAR),
         ].iter().zip(0..)
         {
             let mut p = Parser::from_tokens(
