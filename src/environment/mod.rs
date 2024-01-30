@@ -26,15 +26,15 @@ impl Environment {
     }
 
     pub fn create_scope(&mut self) {
-        println!("\t\tcreate [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        // println!("\t\tcreate [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         let mut scope = Scope::new();
         scope.coord = self.coord.clone();
         self.scopes.push(scope);
     }
 
     pub fn destroy_scope(&mut self) {
-        if self.scopes.len() == 1 { dbg!("attempted to exit from main scope"); }
-        println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        if self.scopes.len() == 1 { warn!("attempted to exit from main scope"); }
+        // println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
 

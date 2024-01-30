@@ -227,8 +227,6 @@ add_one = |n| n + 1
 |4| @ |n|(n ^ 2) @ |n|n / 3  // 5
 // careful about specifying the applicable's limits! without the parentheses, this is what would've been specified:
 |4| @ |n| n^(2 @ |n| n/3)  // 1
-
-
 ```
 
 The operator `@@` is, instead, special in terms of its input, effect, receiver and output.

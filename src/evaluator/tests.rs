@@ -70,7 +70,7 @@ mod tests {
                     source: Box::new(
                         ASSOCIATION_EXPR(vec![
                             (str_expr("s"), int_expr(2))
-                        ])
+                        ], true)
                     ),
                     op: Token::debug(PULL),
                     key: str_expr("s"),
@@ -93,7 +93,7 @@ mod tests {
                     source: Box::new(
                         ASSOCIATION_EXPR(vec![
                             (Box::new(UNDERSCORE_EXPR(Coord::new())), int_expr(2))
-                        ])
+                        ], true)
                     ),
                     op: Token::debug(PULL),
                     key: str_expr("r"),

@@ -331,6 +331,6 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&ASSOCIATION_EXPR(vec![])));
+        assert!(expr.type_equals(&ASSOCIATION_EXPR(vec![], true)));
     }
 }

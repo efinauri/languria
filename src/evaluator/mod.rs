@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
-use log::error;
+use log::{error, info};
 
 use crate::environment::Environment;
 use crate::environment::value::{Value, ValueMap};
@@ -38,7 +38,11 @@ enum OperationStatus {
 
 impl<'a> Evaluator<'a> {
     pub fn was_evaluation_consistent(&self) -> bool {
-        let mut all_good = false;
+        if !self.scribe.has_errors() &&
+            self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
+            info!("*** EVERYTHING WAS REGULARLY CONSUMED ***");
+            return true;
+        }
         if self.scribe.has_errors() {
             error!("*** SCRIBE HAS ERRORS! ***\n");
         }
@@ -57,12 +61,7 @@ impl<'a> Evaluator<'a> {
                 error!("\t{:?}", val);
             }
         }
-        if !self.scribe.has_errors() &&
-            self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
-            all_good = true;
-            error!("*** EVERYTHING WAS REGULARLY CONSUMED ***")
-        }
-        all_good
+        false
     }
 
     pub fn new(
@@ -336,7 +335,6 @@ impl<'a> Evaluator<'a> {
     /// if the current operation is a scope closure, and we're about to add another one, we can instead collapse them.
     fn add_scope_closure_lazily(&mut self, block_size: usize) {
         if self.is_current_op_scope_closure().is_some() {
-            dbg!("avoid scope closure");
             self.op_queue.pop_back();
         }
         self.op_queue.push_back(Operation::from_type(SCOPE_CLOSURE_OP(block_size)));
@@ -354,7 +352,6 @@ impl<'a> Evaluator<'a> {
                 _ => {}
             }
             if self.times_curr_scope_was_recycled == last_val {
-                dbg!("lazy create");
                 self.env.create_scope(); }
         }
     }

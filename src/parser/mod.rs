@@ -351,7 +351,7 @@ impl Parser<'_> {
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
             let op = self.read_prev().clone();
-            let mut body = self.unary();
+            let mut body = self.primary();
             if let ARGS(_) = body {
                 body = APPLICABLE_EXPR {
                     params: Box::new(body),

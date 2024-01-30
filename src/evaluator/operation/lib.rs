@@ -130,7 +130,8 @@ pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed
     };
 
     let params = lambda_contents.0;
-    let params = if let Expression::ARGS(params) = params {
+    let params = if let Expression::ARGS(mut params) = params {
+        params.reverse();
         params
     } else { unreachable!() };
     if params.len() != *amount_of_passed_args {
