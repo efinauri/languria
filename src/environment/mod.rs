@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use log::warn;
 
 use value::Value;
 use value::Value::*;
@@ -32,6 +33,7 @@ impl Environment {
     }
 
     pub fn destroy_scope(&mut self) {
+        if self.scopes.len() == 1 { dbg!("attempted to exit from main scope"); }
         println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }

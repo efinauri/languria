@@ -175,7 +175,6 @@ impl Parser<'_> {
         if self.tokens.is_empty() { return; }
         while self.can_consume() {
             let expr = self.build_expression();
-            dbg!(&expr);
             self.exprs.push_front(expr);
         }
     }
@@ -352,7 +351,7 @@ impl Parser<'_> {
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
             let op = self.read_prev().clone();
-            let mut body = self.primary();
+            let mut body = self.unary();
             if let ARGS(_) = body {
                 body = APPLICABLE_EXPR {
                     params: Box::new(body),

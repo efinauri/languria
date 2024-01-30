@@ -226,13 +226,15 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
                 Expression::ASSOCIATION_EXPR(pairs, is_lazy) => {
-                    aux_op_queue.push_front(Operation::from_type(
-                        ASSOC_GROWER_SETUPPER_OP(ValueMap::new(), pairs.len(), is_lazy)));
-                    for (k, v) in pairs {
-                        aux_exp_queue.push_front(*k.clone());
-                        aux_exp_queue.push_front(*v.clone());
+                    if pairs.is_empty() { ASSOCIATIONVAL(ValueMap::new()) } else {
+                        aux_op_queue.push_front(Operation::from_type(
+                            ASSOC_GROWER_SETUPPER_OP(ValueMap::new(), pairs.len(), is_lazy)));
+                        for (k, v) in pairs {
+                            aux_exp_queue.push_front(*k.clone());
+                            aux_exp_queue.push_front(*v.clone());
+                        }
+                        NOTAVAL
                     }
-                    NOTAVAL
                 }
                 Expression::RETURN_EXPR(expr) => {
                     aux_exp_queue.push_front(*expr);
@@ -334,21 +336,26 @@ impl<'a> Evaluator<'a> {
     /// if the current operation is a scope closure, and we're about to add another one, we can instead collapse them.
     fn add_scope_closure_lazily(&mut self, block_size: usize) {
         if self.is_current_op_scope_closure().is_some() {
+            dbg!("avoid scope closure");
             self.op_queue.pop_back();
         }
         self.op_queue.push_back(Operation::from_type(SCOPE_CLOSURE_OP(block_size)));
     }
 
-    /// if the last instruction of a block needs to create a scope, it can instead just reuse the current block.
+    /// if the last instruction of a block needs to create a scope, it can instead just reuse the current block
+    /// as long as this isn't the main scope.
     fn create_scope_lazily(&mut self) {
         let last_val = self.times_curr_scope_was_recycled;
+        if self.env.scopes.len() == 1 { return self.env.create_scope(); }
         if let Some(op) = self.op_queue.back() {
             match op.otype {
                 SCOPE_CLOSURE_OP(n) => { self.times_curr_scope_was_recycled += (op.seen_values + 1 == n) as usize; }
                 AT_APPLICABLE_RESOLVER_OP => { self.times_curr_scope_was_recycled += 1; }
                 _ => {}
             }
-            if self.times_curr_scope_was_recycled == last_val { self.env.create_scope(); }
+            if self.times_curr_scope_was_recycled == last_val {
+                dbg!("lazy create");
+                self.env.create_scope(); }
         }
     }
 }

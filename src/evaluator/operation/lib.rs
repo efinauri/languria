@@ -88,7 +88,8 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
             iterand.to_owned(), body.to_owned(),
         )));
         eval.exp_queue.push_back(body.deref().clone());
-    } else { eval.add_scope_closure_lazily(1) }
+    // } else { eval.op_queue.push_back(Operation::from_type(SCOPE_CLOSURE_OP(1))); }
+    } else { eval.add_scope_closure_lazily(1); }
     // before all of this, however, we need to unlazy the map's value and put it back into ti.
     if let LAZYVAL(ex) = ti {
         eval.exp_queue.push_back(*ex);
@@ -98,7 +99,6 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
 }
 
 pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed_args: &usize, tok: &Token) -> Result<Value, Value> {
-    eval.create_scope_lazily();
     if tok.type_equals(&ATAT) {
         // assoc_arg @@ it-expression. another operation takes over, binding one iteration of params at a time.
         let arg = eval.val_queue.pop_back().unwrap();
@@ -116,6 +116,7 @@ pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed
             _ => eval.error(EVAL_ITER_APPL_ON_NONITER(arg))
         });
     }
+    eval.create_scope_lazily();
     // | args | @ lambdaval, where lambdaval = | params | body
     let body_expr = eval.exp_queue.back().unwrap().clone();
     let body_expr = body_expr.ok_or_var_with_applicable(eval);
