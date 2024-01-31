@@ -1,7 +1,6 @@
 use std::clone::Clone;
 use std::collections::HashMap;
-use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug};
 use std::iter::Iterator;
 use std::str::FromStr;
 
@@ -105,27 +104,13 @@ lazy_static! {
 ]);
 }
 
-const ZERO_COORD: Coord = Coord { row: 0, column: 0 };
-
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Coord {
     pub row: usize,
     pub column: usize,
 }
 
-impl Coord {
-    pub fn zero() -> &'static Coord {&ZERO_COORD}
-    pub fn new() -> Coord { Coord { row: 0, column: 0 } }
-    pub fn from(row: usize, column: usize) -> Coord { Coord{ row, column }}
-}
-
-impl Display for Coord {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&*format!("[{}:{}]", self.row, self.column))
-    }
-}
-
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub ttype: TokenType,
     pub coord: Coord,
@@ -133,11 +118,6 @@ pub struct Token {
 
 
 impl Token {
-    #[allow(dead_code)]
-    pub fn debug(ttype: TokenType) -> Token {
-        Token { ttype, coord: Coord::new() }
-    }
-
     pub fn new(ttype: TokenType, row: usize, column: usize) -> Token { Token { ttype, coord: Coord { row, column } } }
 
     pub fn type_equals(&self, other: &TokenType) -> bool {
@@ -151,39 +131,27 @@ impl Token {
     }
 }
 
-impl Display for Token {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Ok(f.write_str(&*format!("{:?}", self.ttype))?)
-    }
-}
-
-impl Debug for Token {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(self.to_string().as_str()) }
-}
-
+#[derive(Debug)]
 pub struct Lexer<'a> {
-    source: Vec<char>,
-    tokens: Vec<Token>,
-    current_row: usize,
+    pub(crate) source: Vec<char>,
+    pub(crate) tokens: Vec<Token>,
+    pub(crate) current_row: usize,
     current_column: usize,
-    cursor: Cursor,
+    pub(crate) cursor: Cursor,
     scribe: &'a mut ErrorScribe,
 }
 
-impl WalksCollection<'_, Vec<char>, char> for Lexer<'_> {
-    fn cnt(&self) -> &Cursor { &self.cursor }
-    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.cursor }
-    fn arr(&self) -> &Vec<char> { &self.source }
-}
-
-impl Debug for Lexer<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&*format!("source: {:?}\nc: {}, line: {}\ntoks: {:?}",
-                              self.source, self.cursor, self.current_row, self.tokens))
-    }
-}
-
 impl<'a> Lexer<'_> {
+    fn fwd(&mut self) {
+        self.cursor.step_fwd();
+        self.current_column += 1;
+    }
+
+    fn fwd_consume(&'a mut self) -> &'a char {
+        self.current_column += 1;
+        self.consume()
+    }
+
     pub fn from_string(s: String, scribe: &mut ErrorScribe) -> Lexer {
         Lexer {
             source: s.chars().collect(),
@@ -201,12 +169,13 @@ impl<'a> Lexer<'_> {
             if self.peek(i) != &ch { return false; }
         }
         self.cursor.mov(seq.len() as i32);
+        self.current_row += seq.len();
         true
     }
 
     fn consume_next_if_eq(&mut self, other: char) -> bool {
         if self.can_consume() && *self.read_curr() == other {
-            self.mut_cnt().step_fwd();
+            self.fwd();
             return true;
         }
         false
@@ -218,14 +187,14 @@ impl<'a> Lexer<'_> {
         while self.can_consume() {
             let peeked = self.read_curr();
             match peeked {
-                '0'..='9' => { str.push(self.consume().clone()); }
+                '0'..='9' => { str.push(self.fwd_consume().clone()); }
                 '.' => {
                     if !is_float && ('0'..='9').contains(&self.read_next()) {
-                        str.push(self.consume().clone());
+                        str.push(self.fwd_consume().clone());
                         is_float = true;
                     } else { break; }
                 }
-                '_' => { self.consume(); }
+                '_' => { self.fwd_consume(); }
                 _ => { break; }
             }
         }
@@ -236,7 +205,7 @@ impl<'a> Lexer<'_> {
         while self.can_consume() {
             match self.read_curr() {
                 '\n' => { break; }
-                _ => { self.consume(); }
+                _ => { self.fwd_consume(); }
             }
         }
     }
@@ -246,7 +215,7 @@ impl<'a> Lexer<'_> {
         while self.can_consume() {
             let peeked = self.read_curr();
             match peeked {
-                'a'..='z' | 'A'..='Z' | '_' => { str.push(self.consume().clone()); }
+                'a'..='z' | 'A'..='Z' | '_' => { str.push(self.fwd_consume().clone()); }
                 _ => { break; }
             }
         }
@@ -258,14 +227,14 @@ impl<'a> Lexer<'_> {
 
     fn consume_str(&mut self, starting_symbol: char) -> TokenType {
         let mut str = String::new();
-        let mut symbol = self.consume();
+        let mut symbol = self.fwd_consume();
         while symbol != &starting_symbol {
             str.push(symbol.clone());
             match symbol {
                 '\\' => {
                     str.pop();
                     if self.can_consume() {
-                        let next = self.consume();
+                        let next = self.fwd_consume();
                         match next {
                             't' => { str.push('\t'); }
                             'n' => { str.push('\n'); }
@@ -275,7 +244,7 @@ impl<'a> Lexer<'_> {
                 }
                 '\n' => {
                     self.scribe.annotate_error(
-                        Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
+                        Error::on_coord(&Coord::new(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
                     self.current_row += 1;
                     self.current_column = 1;
                     return STRING(str);
@@ -283,19 +252,18 @@ impl<'a> Lexer<'_> {
                 _ => {
                     if !self.can_consume() {
                         self.scribe.annotate_error(
-                            Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
+                            Error::on_coord(&Coord::new(self.current_row, self.current_column), ErrorType::LEXER_BAD_STR_FMT));
                     }
                 }
             }
-            symbol = self.consume();
+            symbol = self.fwd_consume();
         }
         STRING(str)
     }
 
     pub fn produce_tokens(&mut self) -> &Vec<Token> {
         while self.can_consume() {
-            let symbol = self.consume().clone();
-            self.current_column += 1;
+            let symbol = self.fwd_consume().clone();
             let ttyp = match symbol {
                 ' ' | '\r' | '\t' => continue,
                 '\n' => {
@@ -365,7 +333,7 @@ impl<'a> Lexer<'_> {
             };
             if ttyp == NOTATOKEN {
                 self.scribe.annotate_error(
-                    Error::on_coord(&Coord::from(self.current_row, self.current_column), ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
+                    Error::on_coord(&Coord::new(self.current_row, self.current_column), ErrorType::LEXER_UNEXPECTED_SYMBOL(symbol)));
             }
             self.tokens.push(Token::new(ttyp, self.current_row, self.current_column));
         }

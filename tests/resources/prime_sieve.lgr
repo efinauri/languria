@@ -1,0 +1,20 @@
+generate_primes_smaller_than = |size| {
+    prime_factors = !!:[2, 3]
+    candidate_prime = 5
+    loop = || {
+        candidate_prime >= size and return prime_factors
+        is_prime = true
+        prime_factors @@ {
+           candidate_prime % ti == 0 and (return is_prime = false)
+           candidate_prime < ti^2 and (return is_prime = true)
+           }
+        is_prime and {
+           prime_factors << |1 + prime_factors @@idx, candidate_prime|
+        }
+        candidate_prime += 2
+        _@ loop
+    }
+    _@ loop
+}
+
+$show = 100 @ generate_primes_smaller_than

@@ -8,6 +8,7 @@ use crate::evaluator::Evaluator;
 use crate::lexer::{Coord, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
+use crate::boilerplate::ZERO_COORD;
 
 mod tests;
 
@@ -66,7 +67,7 @@ impl Expression {
             VAR_RAW(coord, _) => &coord,
 
             ARGS(exprs) |
-            BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&Coord::zero()),
+            BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&ZERO_COORD),
 
             PRINT_EXPR(expr, _) |
             APPLICABLE_EXPR { params: expr, .. } |
@@ -75,12 +76,12 @@ impl Expression {
             OPTION_EXPR(expr) |
             RETURN_EXPR(expr) => expr.coord(),
 
-            ASSOCIATION_EXPR(v, _) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&Coord::zero()),
+            ASSOCIATION_EXPR(v, _) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&ZERO_COORD),
 
             LIST_DECLARATION_EXPR { .. } |
             SET_DECLARATION_EXPR { .. } |
             VALUE_WRAPPER(_) |
-            NOTANEXPR => &Coord::zero(),
+            NOTANEXPR => &ZERO_COORD,
         }
     }
 
@@ -153,16 +154,10 @@ const POSTFIX_UNARY_TOKENS: [TokenType; 2] = [ASBOOL, EXTRACT];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
-    tokens: Vec<Token>,
-    cursor: Cursor,
+    pub(crate) tokens: Vec<Token>,
+    pub(crate) cursor: Cursor,
     scribe: &'a mut ErrorScribe,
     exprs: VecDeque<Expression>,
-}
-
-impl WalksCollection<'_, Vec<Token>, Token> for Parser<'_> {
-    fn cnt(&self) -> &Cursor { &self.cursor }
-    fn mut_cnt(&mut self) -> &mut Cursor { &mut self.cursor }
-    fn arr(&self) -> &Vec<Token> { &self.tokens }
 }
 
 impl Parser<'_> {
@@ -183,7 +178,7 @@ impl Parser<'_> {
     fn build_expression(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_coord(
-                if self.tokens.is_empty() { &Coord::zero() } else { &self.read_prev().coord },
+                if self.cursor.get() == 0 { &self.read_curr().coord } else { &self.read_prev().coord },
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
@@ -374,7 +369,7 @@ impl Parser<'_> {
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_coord(
-                if self.tokens.is_empty() { &Coord::zero() } else { &self.read_prev().coord },
+                if self.cursor.get() == 0 { &self.read_curr().coord } else { &self.read_prev().coord },
                 ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
             return NOTANEXPR;
         }
@@ -387,7 +382,8 @@ impl Parser<'_> {
             return self.build_association_declaration(AssociationState::SET, false);
         } else if self.curr_is_seq(&[BANGBANG, LBRACKET]) {
             self.cursor.step_fwd();
-            return self.process_association(false); }
+            return self.process_association(false);
+        }
 
         let tok = &self.tokens.get(self.cursor.get()).unwrap().clone();
         return match &tok.ttype {
@@ -493,7 +489,9 @@ impl Parser<'_> {
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
         if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
             self.scribe.annotate_error(Error::on_coord(
-                self.try_read_curr().map(|tok| &tok.coord).unwrap_or(&Coord::new()),
+                self.try_read_curr().map(|tok| &tok.coord).unwrap_or(
+                    &self.read_prev().coord
+                ),
                 ErrorType::PARSER_EXPECTED_TOKEN(ttype)));
             return false;
         }

@@ -11,7 +11,7 @@ use crate::errors::ErrorType::EVAL_INVALID_PUSH;
 use crate::evaluator::operation::Operation;
 use crate::evaluator::operation::OperationType::*;
 use crate::evaluator::OperationStatus::*;
-use crate::lexer::{Coord, Token};
+use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::{AssociationState, Expression};
 
@@ -26,7 +26,6 @@ pub struct Evaluator<'a> {
     val_queue: VecDeque<Value>,
     scribe: &'a mut ErrorScribe,
     env: &'a mut Environment,
-    times_curr_scope_was_recycled: usize,
 }
 
 #[derive(PartialEq)]
@@ -37,6 +36,22 @@ enum OperationStatus {
 }
 
 impl<'a> Evaluator<'a> {
+    pub fn dbg(&self) {
+        println!("\nOPS:\n{}", self.op_queue.iter()
+            .map(|o|o.otype.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"));
+        println!("VALS:\n{}", self.val_queue.iter()
+            .map(|v|v.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"));
+        println!("EXPRS:\n{}", self.exp_queue.iter()
+            .map(|e|e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n"));
+        println!();
+    }
+
     pub fn was_evaluation_consistent(&self) -> bool {
         if !self.scribe.has_errors() &&
             self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
@@ -75,7 +90,6 @@ impl<'a> Evaluator<'a> {
             val_queue: Default::default(),
             scribe,
             env,
-            times_curr_scope_was_recycled: 0,
         }
     }
 
@@ -164,7 +178,7 @@ impl<'a> Evaluator<'a> {
                 Expression::NOTANEXPR => { self.error(ErrorType::EVAL_INVALID_EXPR) }
                 Expression::VALUE_WRAPPER(val) => val.deref().clone(),
                 Expression::OPTION_EXPR(ex) => {
-                    if ex.type_equals(&Expression::UNDERSCORE_EXPR(Coord::new())) { OPTIONVAL(None) } else {
+                    if ex.type_equals(&Expression::UNDERSCORE_EXPR(Default::default())) { OPTIONVAL(None) } else {
                         aux_exp_queue.push_front(*ex);
                         aux_op_queue.push_front(Operation::from_type(OPTIONAL_OP));
                         NOTAVAL
@@ -343,16 +357,15 @@ impl<'a> Evaluator<'a> {
     /// if the last instruction of a block needs to create a scope, it can instead just reuse the current block
     /// as long as this isn't the main scope.
     fn create_scope_lazily(&mut self) {
-        let last_val = self.times_curr_scope_was_recycled;
-        if self.env.scopes.len() == 1 { return self.env.create_scope(); }
+        let mut recycle = false;
+        if self.env.scopes.len() == 1 { return self.env.create_or_reuse_scope(false); }
         if let Some(op) = self.op_queue.back() {
             match op.otype {
-                SCOPE_CLOSURE_OP(n) => { self.times_curr_scope_was_recycled += (op.seen_values + 1 == n) as usize; }
-                AT_APPLICABLE_RESOLVER_OP => { self.times_curr_scope_was_recycled += 1; }
+                SCOPE_CLOSURE_OP(n) => { recycle = op.seen_values + 1 == n; }
+                AT_APPLICABLE_RESOLVER_OP => { recycle = true; }
                 _ => {}
             }
-            if self.times_curr_scope_was_recycled == last_val {
-                self.env.create_scope(); }
+            self.env.create_or_reuse_scope(recycle);
         }
     }
 }

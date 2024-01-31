@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use log::warn;
 
 use value::Value;
 use value::Value::*;
@@ -25,20 +24,28 @@ impl Environment {
         }
     }
 
-    pub fn create_scope(&mut self) {
-        // println!("\t\tcreate [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
-        let mut scope = Scope::new();
-        scope.coord = self.coord.clone();
-        self.scopes.push(scope);
+    pub fn create_or_reuse_scope(&mut self, reuse: bool) {
+        if reuse {
+            assert!(self.scopes.len() > 1);
+            self.scopes.last_mut().unwrap().times_recycled += 1;
+        }
+        else {
+            println!("create {} {}", self.scopes.len() + 1, &self.coord);
+            let mut scope = Scope::new();
+            scope.coord = self.coord.clone();
+            self.scopes.push(scope);
+        }
     }
 
     pub fn destroy_scope(&mut self) {
-        if self.scopes.len() == 1 { warn!("attempted to exit from main scope"); }
-        // println!("\t\tdestroy [{}:{}]:\t{}", &self.coord.row, &self.coord.column, &self.scopes.len());
+        assert!(self.scopes.len() > 1);
+        println!("destroy {} {}", self.scopes.len() - 1, &self.coord);
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
 
-    pub fn curr_scope(&mut self) -> &Scope { self.scopes.last().unwrap() }
+    pub fn curr_scope(&self) -> &Scope { self.scopes.last().unwrap() }
+
+    pub fn curr_scope_times_recycled(&self) -> usize { self.curr_scope().times_recycled }
 
 
     pub fn try_read(&self, varname: &String) -> Option<&Value> {
@@ -81,6 +88,7 @@ pub struct Scope {
     variables: HashMap<String, Value>,
     pub(crate) entry_point: String,
     coord: Coord,
+    times_recycled: usize,
 }
 
 impl Scope {
@@ -88,7 +96,8 @@ impl Scope {
         Scope {
             variables: Default::default(),
             entry_point: String::from("REPL"),
-            coord: Coord::new(),
+            coord: Default::default(),
+            times_recycled: 0,
         }
     }
 

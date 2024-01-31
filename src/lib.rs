@@ -7,7 +7,9 @@ mod evaluator;
 pub mod environment;
 pub mod user_io;
 pub mod errors;
+mod boilerplate;
 
+#[derive(Debug)]
 pub struct Cursor {
     pub val: usize,
 }

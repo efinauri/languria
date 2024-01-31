@@ -3,9 +3,15 @@ mod tests {
     use std::iter::zip;
 
     use crate::errors::ErrorScribe;
-    use crate::lexer::{Lexer, Token};
+    use crate::lexer::{Lexer, Token, TokenType};
     use crate::lexer::TokenType::*;
     use crate::WalksCollection;
+
+    impl Token {
+        pub fn debug(ttype: TokenType) -> Token {
+            Token { ttype, coord: Default::default() }
+        }
+    }
 
     #[test]
     fn type_equals() {

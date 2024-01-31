@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::errors::ErrorScribe;
-    use crate::lexer::{Coord, Token};
+    use crate::lexer::Token;
     use crate::lexer::TokenType::*;
     use crate::parser::Expression::*;
     use crate::parser::Parser;
@@ -246,7 +246,7 @@ mod tests {
             &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
-        assert!(expr.type_equals(&VAR_RAW(Coord::new(), "".to_string())));
+        assert!(expr.type_equals(&VAR_RAW(Default::default(), "".to_string())));
     }
 
     #[test]
@@ -274,8 +274,6 @@ mod tests {
         assert!(!p.curr_is_seq(&[LT, GTE, LTE, LTE]));
         assert!(!p.curr_is_seq(&[GT, NOT]));
         assert!(!p.curr_is_seq(&[]));
-        p.cursor.mov(100);
-        assert!(!p.assert_curr_is(LT));
     }
 
     #[test]

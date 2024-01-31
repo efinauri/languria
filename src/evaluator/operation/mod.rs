@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
 use crate::errors::ErrorType::*;
@@ -8,6 +10,32 @@ use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
 mod lib;
+
+impl Display for OperationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            match &self {
+                BINARY_OP(_) => "BINARY",
+                OPTIONAL_OP => "OPTIONAL",
+                LAZY_LOGIC_OP(_) => "LOGIC (LAZY)",
+                LOGIC_OP(_) => "LOGIC",
+                UNARY_OP(_) => "UNARY",
+                VARASSIGN_OP(str, _) => "VAR ASSIGN",
+                SCOPE_CLOSURE_OP(_) => "CLOSURE",
+                RETURN_CLEANUP => "RETURN",
+                ASSOC_GROWER_SETUPPER_OP(_, _, _) => "ASSOC GROW",
+                ASSOC_GROWER_RESOLVER_OP(_, _, _) => "ASSOC GROW (RES)",
+                PULL_OP(_) => "PULL",
+                BIND_APPLICATION_ARGS_TO_PARAMS_OP(_, _) => "ARGBIND",
+                AT_APPLICABLE_RESOLVER_OP => "APPLICATION",
+                ASSOC_PUSHER_OP => "PUSH",
+                ITERATIVE_PARAM_BINDER(_, _, _) => "@@ITER",
+                TI_REBINDER_OP => "TIREBIND",
+                PRINT_OP(_) => "PRINT"
+            }
+        )
+    }
+}
 
 #[derive(Debug)]
 #[allow(non_camel_case_types)]
@@ -130,6 +158,7 @@ impl Operation {
                 eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op)
             }
             SCOPE_CLOSURE_OP(_) => {
+                eval.dbg();
                 eval.env.destroy_scope();
                 previous_val.to_owned()
             }
@@ -148,6 +177,7 @@ impl Operation {
                         eval.val_queue.pop_back();
                     }
                 }
+                &eval.dbg();
                 eval.env.destroy_scope();
                 return_val
             }

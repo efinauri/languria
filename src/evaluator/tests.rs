@@ -9,7 +9,7 @@ mod tests {
     use crate::environment::value::Value;
     use crate::errors::ErrorScribe;
     use crate::evaluator::Evaluator;
-    use crate::lexer::{Coord, Token};
+    use crate::lexer::Token;
     use crate::lexer::TokenType::*;
     use crate::parser::Expression;
     use crate::parser::Expression::*;
@@ -46,7 +46,6 @@ mod tests {
                 val_queue: Default::default(),
                 scribe,
                 env,
-                times_curr_scope_was_recycled: 0,
             }
         }
     }
@@ -92,7 +91,7 @@ mod tests {
                 PULL_EXPR {
                     source: Box::new(
                         ASSOCIATION_EXPR(vec![
-                            (Box::new(UNDERSCORE_EXPR(Coord::new())), int_expr(2))
+                            (Box::new(UNDERSCORE_EXPR(Default::default())), int_expr(2))
                         ], true)
                     ),
                     op: Token::debug(PULL),
@@ -133,9 +132,9 @@ mod tests {
                     arg: int_expr(2),
                     op: Token::debug(AT),
                     body: Box::new(APPLICABLE_EXPR {
-                        params: Box::new(ARGS(vec![Box::new(VAR_RAW(Coord::new(), "n".to_string()))])),
+                        params: Box::new(ARGS(vec![Box::new(VAR_RAW(Default::default(), "n".to_string()))])),
                         body: Box::new(BINARY {
-                            lhs: Box::new(VAR_RAW(Coord::new(), "n".parse().unwrap())),
+                            lhs: Box::new(VAR_RAW(Default::default(), "n".parse().unwrap())),
                             op: Token::debug(MUL),
                             rhs: str_expr("s"),
                         }),
