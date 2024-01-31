@@ -133,12 +133,12 @@ impl Token {
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    pub(crate) source: Vec<char>,
-    pub(crate) tokens: Vec<Token>,
-    pub(crate) current_row: usize,
-    current_column: usize,
-    pub(crate) cursor: Cursor,
-    scribe: &'a mut ErrorScribe,
+    pub source: Vec<char>,
+    pub tokens: Vec<Token>,
+    pub current_row: usize,
+    pub current_column: usize,
+    pub cursor: Cursor,
+    pub scribe: &'a mut ErrorScribe,
 }
 
 impl<'a> Lexer<'_> {

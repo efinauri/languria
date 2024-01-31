@@ -1,7 +1,9 @@
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, format, Formatter};
+use log::{error, info};
 
 use crate::{Cursor, WalksCollection};
+use crate::evaluator::Evaluator;
 use crate::lexer::{Coord, Lexer, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::{Expression, Parser};
@@ -10,6 +12,7 @@ use crate::parser::Expression::*;
 /// display, debug and similar impls for the various structs.
 
 pub(crate) const ZERO_COORD: Coord = Coord { row: 0, column: 0 };
+
 impl Coord {
     pub fn new(row: usize, column: usize) -> Coord { Coord { row, column } }
 }
@@ -81,7 +84,7 @@ impl Display for TokenType {
             PULL => ">>".to_string(),
             PUSH => "<<".to_string(),
             COLON => ":".to_string(),
-            COMMA => ".to_string(),".to_string(),
+            COMMA => ",".to_string(),
             UNDERSCORE => "_".to_string(),
             SET => "SET[".to_string(),
             LIST => "LIST[".to_string(),
@@ -125,23 +128,46 @@ impl Expression {
                 format!("BLOK(\n{})", exprs.iter()
                     .map(|e| e.indented_string(idt + 1) + "\n")
                     .collect::<Vec<_>>()
-                    .join("\n")
-                ),
+                    .join("\n")),
             APPLIED_EXPR { arg, op, body } =>
                 format!("APLD({op},\n{},\n{})", arg.indented_string(idt + 1), body.indented_string(idt + 1)),
             RETURN_EXPR(expr) => format!("RTRN({})", expr.indented_string(idt)),
-            ASSOCIATION_EXPR(_, _) => "ASSOCIATION".to_string(),
+
+            ASSOCIATION_EXPR(pairs, lazy) =>
+                format!("ASSC({},\n{})",
+                        if *lazy { "lazy" } else { "eager" },
+                        pairs.iter()
+                            .map(|p| format!(
+                                "({})->({})",
+                                p.0.indented_string(idt + 1),
+                                p.1.indented_string(idt + 1))
+                            ).collect::<Vec<_>>()
+                            .join(", ")
+                ),
             LIST_DECLARATION_EXPR { .. } => "LISTDECL".to_string(),
             SET_DECLARATION_EXPR { .. } => "SETDECL".to_string(),
-            PULL_EXPR { .. } => "PULL".to_string(),
-            PUSH_EXPR { .. } => "PUSH".to_string(),
-            ARGS(_) => "ARGS".to_string(),
-            APPLICABLE_EXPR { .. } => "APPLICABLE".to_string(),
-            OPTION_EXPR(_) => "OPTION".to_string(),
+            PULL_EXPR { source, op, key } =>
+                format!("PULL({op}, {}\n{})",
+                    key.indented_string(idt), source.indented_string(idt+1)
+                ),
+            PUSH_EXPR { obj, args } =>
+                format!("PUSH(\n{}\n{})", args.indented_string(idt+1), obj.indented_string(idt+1)),
+            ARGS(exprs) =>
+                format!("ARGS(\n{})", exprs.iter()
+                    .map(|e|e.indented_string(idt+1))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                ),
+            APPLICABLE_EXPR { params, body: _ignored } =>
+                format!("APBL({})", params.indented_string(idt)),
+            OPTION_EXPR(expr) => format!("OPTN({})", expr.indented_string(idt)),
             UNDERSCORE_EXPR(_) => "_".to_string(),
-            PRINT_EXPR(_, _) => "PRINT".to_string(),
-            NOTANEXPR => "NOTANEXPR".to_string(),
-            VALUE_WRAPPER(_) => "VALUE".to_string(),
+            PRINT_EXPR(expr, tag) =>
+                format!("PRNT({}{})",
+                        if let Some(t) = tag {format!("<{t}>")} else {"".to_string()},
+                        expr.indented_string(idt)),
+            NOTANEXPR => "NEXPR".to_string(),
+            VALUE_WRAPPER(val) => format!("_VAL({val})"),
         };
         return format!("{}{}", "  ".repeat(idt), content);
     }
@@ -149,4 +175,51 @@ impl Expression {
 
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(&*self.indented_string(0)) }
+}
+
+
+impl<'a> Evaluator<'a> {
+    pub fn dbg(&self) {
+        println!("{} EVALUATOR SNAPSHOT:", self.env.coord);
+        println!("\nOPS:\n\t ** {}", self.op_queue.iter()
+            .map(|o| o.otype.to_string())
+            .collect::<Vec<_>>()
+            .join("\n\t ** "));
+        println!("VALS:\n\t ** {}", self.val_queue.iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join("\n\t ** "));
+        println!("EXPRS:\n\t ** {}", self.exp_queue.iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n\t ** "));
+        println!();
+    }
+
+    pub fn was_evaluation_consistent(&self) -> bool {
+        if !self.scribe.has_errors() &&
+            self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
+            info!("*** EVERYTHING WAS REGULARLY CONSUMED ***");
+            return true;
+        }
+        if self.scribe.has_errors() {
+            error!("*** SCRIBE HAS ERRORS! ***\n");
+        }
+        if self.env.scopes.len() != 1 {
+            error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
+        }
+        if !self.op_queue.is_empty() {
+            error!("*** UNCONSUMED OPS! ***\n{:?}\n\n", &self.op_queue);
+        }
+        if !self.exp_queue.is_empty() {
+            error!("*** UNCONSUMED EXPS! ***\n{:?}\n\n", &self.exp_queue);
+        }
+        if !self.val_queue.is_empty() {
+            error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
+            for val in &self.val_queue {
+                error!("\t{:?}", val);
+            }
+        }
+        false
+    }
 }

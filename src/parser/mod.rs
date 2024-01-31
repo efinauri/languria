@@ -154,10 +154,10 @@ const POSTFIX_UNARY_TOKENS: [TokenType; 2] = [ASBOOL, EXTRACT];
 const LOGIC_TOKENS: [TokenType; 3] = [AND, OR, XOR];
 
 pub struct Parser<'a> {
-    pub(crate) tokens: Vec<Token>,
-    pub(crate) cursor: Cursor,
-    scribe: &'a mut ErrorScribe,
-    exprs: VecDeque<Expression>,
+    pub tokens: Vec<Token>,
+    pub cursor: Cursor,
+    pub scribe: &'a mut ErrorScribe,
+    pub exprs: VecDeque<Expression>,
 }
 
 impl Parser<'_> {

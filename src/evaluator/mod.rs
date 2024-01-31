@@ -21,11 +21,11 @@ mod lib;
 mod operation;
 
 pub struct Evaluator<'a> {
-    exp_queue: &'a mut VecDeque<Expression>,
-    op_queue: VecDeque<Operation>,
-    val_queue: VecDeque<Value>,
-    scribe: &'a mut ErrorScribe,
-    env: &'a mut Environment,
+    pub exp_queue: &'a mut VecDeque<Expression>,
+    pub op_queue: VecDeque<Operation>,
+    pub val_queue: VecDeque<Value>,
+    pub scribe: &'a mut ErrorScribe,
+    pub env: &'a mut Environment,
 }
 
 #[derive(PartialEq)]
@@ -36,49 +36,6 @@ enum OperationStatus {
 }
 
 impl<'a> Evaluator<'a> {
-    pub fn dbg(&self) {
-        println!("\nOPS:\n{}", self.op_queue.iter()
-            .map(|o|o.otype.to_string())
-            .collect::<Vec<_>>()
-            .join("\n"));
-        println!("VALS:\n{}", self.val_queue.iter()
-            .map(|v|v.to_string())
-            .collect::<Vec<_>>()
-            .join("\n"));
-        println!("EXPRS:\n{}", self.exp_queue.iter()
-            .map(|e|e.to_string())
-            .collect::<Vec<_>>()
-            .join("\n"));
-        println!();
-    }
-
-    pub fn was_evaluation_consistent(&self) -> bool {
-        if !self.scribe.has_errors() &&
-            self.op_queue.len() + self.val_queue.len() + self.exp_queue.len() == 0 {
-            info!("*** EVERYTHING WAS REGULARLY CONSUMED ***");
-            return true;
-        }
-        if self.scribe.has_errors() {
-            error!("*** SCRIBE HAS ERRORS! ***\n");
-        }
-        if self.env.scopes.len() != 1 {
-            error!("*** UNCLOSED SCOPES! ***\n{:?}\n\n", &self.env.scopes);
-        }
-        if !self.op_queue.is_empty() {
-            error!("*** UNCONSUMED OPS! ***\n{:?}\n\n", &self.op_queue);
-        }
-        if !self.exp_queue.is_empty() {
-            error!("*** UNCONSUMED EXPS! ***\n{:?}\n\n", &self.exp_queue);
-        }
-        if !self.val_queue.is_empty() {
-            error!("*** UNCONSUMED VALS! ***\n{:?}\n\n", &self.val_queue);
-            for val in &self.val_queue {
-                error!("\t{:?}", val);
-            }
-        }
-        false
-    }
-
     pub fn new(
         exprs: &'a mut VecDeque<Expression>,
         scribe: &'a mut ErrorScribe,
