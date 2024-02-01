@@ -83,14 +83,14 @@ pub fn interpret_instructions(
     scribe: &mut ErrorScribe,
     instructions: String,
     env: &mut Environment,
-    verbose: bool
+    verbose: bool,
 ) -> bool {
     let mut lexer = lexer::Lexer::from_string(instructions, scribe);
     let tokens = lexer.produce_tokens();
     if tokens.is_empty() { return false; }
     if verbose {
         println!("produced following tokens: ");
-        tokens.iter().for_each(|tok| println!("{}", tok));
+        tokens.iter().for_each(|tok| println!("{tok}"));
     }
 
 
@@ -106,15 +106,13 @@ pub fn interpret_instructions(
     }
     if verbose {
         println!("\nthis is parsed as:\n");
-        for ex in &exprs {
-            println!("{:#?}", ex);
-        }
+        exprs.iter().for_each(|expr| println!("{expr}"));
     }
 
     let mut evaluator = Evaluator::new(&mut exprs, scribe, env);
     let value = evaluator.value();
     if verbose {
-        println!("and evaluated as:\n{:?}", &value)
+        println!("and evaluated as:\n{}", &value)
     } else {
         stdout().flush().unwrap();
         println!("\t{}", &value);

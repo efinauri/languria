@@ -2,7 +2,7 @@
 mod tests {
     use std::iter::zip;
 
-    use crate::errors::ErrorScribe;
+    use crate::errors::{ErrorScribe, TerminationPolicy};
     use crate::lexer::{Lexer, Token, TokenType};
     use crate::lexer::TokenType::*;
     use crate::WalksCollection;
@@ -10,6 +10,14 @@ mod tests {
     impl Token {
         pub fn debug(ttype: TokenType) -> Token {
             Token { ttype, coord: Default::default() }
+        }
+    }
+    impl ErrorScribe {
+        pub fn debug() -> ErrorScribe {
+            ErrorScribe {
+                errors: vec![],
+                termination_policy: TerminationPolicy::PERMISSIVE,
+            }
         }
     }
 

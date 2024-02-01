@@ -168,6 +168,7 @@ impl Parser<'_> {
 
     pub fn parse(&mut self) {
         if self.tokens.is_empty() { return; }
+        dbg!(&self.tokens);
         while self.can_consume() {
             let expr = self.build_expression();
             self.exprs.push_front(expr);
@@ -175,15 +176,7 @@ impl Parser<'_> {
     }
 
     ///cursor will be after the built expression.
-    fn build_expression(&mut self) -> Expression {
-        if !self.can_consume() {
-            self.scribe.annotate_error(Error::on_coord(
-                if self.cursor.get() == 0 { &self.read_curr().coord } else { &self.read_prev().coord },
-                ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
-            return NOTANEXPR;
-        }
-        self.applicable()
-    }
+    fn build_expression(&mut self) -> Expression { self.applicable() }
 
     fn applicable(&mut self) -> Expression {
         // if args expr has bubbled up without being captured by anything else, it means that it's defining an applicable expr.

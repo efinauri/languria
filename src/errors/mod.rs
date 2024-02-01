@@ -14,19 +14,11 @@ pub enum TerminationPolicy {
 
 #[derive(Debug)]
 pub struct ErrorScribe {
-    errors: Vec<Error>,
-    termination_policy: TerminationPolicy,
+    pub errors: Vec<Error>,
+    pub termination_policy: TerminationPolicy,
 }
 
 impl ErrorScribe {
-    #[allow(dead_code)]
-    pub fn debug() -> ErrorScribe {
-        ErrorScribe {
-            errors: vec![],
-            termination_policy: TerminationPolicy::PERMISSIVE,
-        }
-    }
-
     pub fn from_termination_policy(termination_policy: TerminationPolicy) -> ErrorScribe {
         ErrorScribe {
             errors: vec![],
@@ -55,6 +47,8 @@ impl ErrorScribe {
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum ErrorType {
+    GENERICERROR,
+
     LEXER_UNEXPECTED_SYMBOL(char),
     LEXER_BAD_STR_FMT,
 
@@ -62,8 +56,6 @@ pub enum ErrorType {
     PARSER_EXPECTED_TOKEN(TokenType),
     PARSER_UNEXPECTED_TOKEN(TokenType),
     PARSER_NOTAVAR,
-
-    GENERICERROR,
 
     EVAL_UNASSIGNED_VAR(String),
     EVAL_ITER_APPL_ON_NONITER(Value),

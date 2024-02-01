@@ -1,9 +1,11 @@
 use std::fmt;
-use std::fmt::{Display, format, Formatter};
+use std::fmt::{Display, Formatter};
+
 use log::{error, info};
 
 use crate::{Cursor, WalksCollection};
 use crate::evaluator::Evaluator;
+use crate::evaluator::operation::OperationType::*;
 use crate::lexer::{Coord, Lexer, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::{Expression, Parser};
@@ -112,88 +114,96 @@ impl Display for Token {
 }
 
 impl Expression {
-    fn indented_string(&self, idt: usize) -> String {
+    fn indented_string(&self, prefix: &str, idt: usize) -> String {
         let content = match &self {
-            LITERAL(tok) => format!("LITL({tok})"),
+            LITERAL(tok) => format!("LITERAL ({tok}"),
             UNARY { op, expr } =>
-                format!("UNRY({op}, {})", expr.indented_string(idt)),
+                format!("UNARY ({op}\n{}", expr.indented_string("unary to: ", idt + 1)),
             BINARY { lhs, op, rhs } |
             LOGIC { lhs, op, rhs } =>
-                format!("BNRY({op},\n{},\n{})", lhs.indented_string(idt + 1), rhs.indented_string(idt + 1)),
-            GROUPING(expr) => format!("({})", expr.indented_string(idt)),
+                format!("BINARY ({op}\n{}\n{}",
+                        lhs.indented_string("binary lhs: ", idt + 1),
+                        rhs.indented_string("binary rhs: ", idt + 1)),
+            GROUPING(expr) => format!("GROUP (\n{}", expr.indented_string("group: ", idt + 1)),
             VAR_ASSIGN { varname, op, varval } =>
-                format!("ASGN({varname}, {op}, {})", varval.indented_string(idt)),
-            VAR_RAW(_, str) => format!("VRAW({str})"),
+                format!("ASSIGN (var: {varname}, op: {op}\n{}", varval.indented_string("var assign what: ", idt + 1)),
+            VAR_RAW(_, str) => format!("VAR RAW ({str}"),
             BLOCK(exprs) =>
-                format!("BLOK(\n{})", exprs.iter()
-                    .map(|e| e.indented_string(idt + 1) + "\n")
+                format!("BLOCK (\n{}", exprs.iter().zip(0..)
+                    .map(|(e, i)| e.indented_string(format!("block[{i}]: ").as_str(), idt + 1))
                     .collect::<Vec<_>>()
                     .join("\n")),
             APPLIED_EXPR { arg, op, body } =>
-                format!("APLD({op},\n{},\n{})", arg.indented_string(idt + 1), body.indented_string(idt + 1)),
-            RETURN_EXPR(expr) => format!("RTRN({})", expr.indented_string(idt)),
+                format!("APPLIED ({op},\n{}\n{}",
+                        arg.indented_string("applied arg: ", idt + 1),
+                        body.indented_string("applied to: ", idt + 1)),
+            RETURN_EXPR(expr) => format!("RETURN (\n{}", expr.indented_string("returned: ", idt + 1)),
 
             ASSOCIATION_EXPR(pairs, lazy) =>
-                format!("ASSC({},\n{})",
+                format!("ASSOCIATION ({},\n{}",
                         if *lazy { "lazy" } else { "eager" },
-                        pairs.iter()
-                            .map(|p| format!(
-                                "({})->({})",
-                                p.0.indented_string(idt + 1),
-                                p.1.indented_string(idt + 1))
+                        pairs.iter().zip(0..)
+                            .map(|(p, i)| format!(
+                                "{}\n{}\n",
+                                p.0.indented_string(format!("key[{i}]: ").as_str(), idt + 1),
+                                p.1.indented_string(format!("val[{i}]: ").as_str(), idt + 1))
                             ).collect::<Vec<_>>()
                             .join(", ")
                 ),
             LIST_DECLARATION_EXPR { .. } => "LISTDECL".to_string(),
             SET_DECLARATION_EXPR { .. } => "SETDECL".to_string(),
             PULL_EXPR { source, op, key } =>
-                format!("PULL({op}, {}\n{})",
-                    key.indented_string(idt), source.indented_string(idt+1)
+                format!("PULL ({op}\n{}\n{}",
+                        key.indented_string("pull key: ", idt + 1),
+                        source.indented_string("pull from: ", idt + 1)
                 ),
             PUSH_EXPR { obj, args } =>
-                format!("PUSH(\n{}\n{})", args.indented_string(idt+1), obj.indented_string(idt+1)),
+                format!("PUSH (\n{}\n{}",
+                        args.indented_string("push what: ", idt + 1),
+                        obj.indented_string("push into: ", idt + 1)),
             ARGS(exprs) =>
-                format!("ARGS(\n{})", exprs.iter()
-                    .map(|e|e.indented_string(idt+1))
+                format!("ARGS (\n{}", exprs.iter().zip(0..)
+                    .map(|(e, i)| e.indented_string(format!("arg[{i}]: ").as_str(), idt + 1))
                     .collect::<Vec<_>>()
                     .join("\n")
                 ),
             APPLICABLE_EXPR { params, body: _ignored } =>
-                format!("APBL({})", params.indented_string(idt)),
-            OPTION_EXPR(expr) => format!("OPTN({})", expr.indented_string(idt)),
+                format!("APPLICABLE (\n{}", params.indented_string("params: ", idt + 1)),
+            OPTION_EXPR(expr) => format!("OPTION (\n{}", expr.indented_string("option of: ", idt + 1)),
             UNDERSCORE_EXPR(_) => "_".to_string(),
             PRINT_EXPR(expr, tag) =>
-                format!("PRNT({}{})",
-                        if let Some(t) = tag {format!("<{t}>")} else {"".to_string()},
-                        expr.indented_string(idt)),
+                format!("PRINT ({}\n{}",
+                        if let Some(t) = tag { format!("<{t}>") } else { "".to_string() },
+                        expr.indented_string("print what: ", idt + 1)),
             NOTANEXPR => "NEXPR".to_string(),
-            VALUE_WRAPPER(val) => format!("_VAL({val})"),
+            VALUE_WRAPPER(val) => format!("_VAL ({val}"),
         };
-        return format!("{}{}", "  ".repeat(idt), content);
+        return format!("{}{prefix}\t{}\n{})", "    ".repeat(idt), content, "    ".repeat(idt));
     }
 }
 
 impl Display for Expression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(&*self.indented_string(0)) }
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(&*self.indented_string("",0)) }
 }
 
 
 impl<'a> Evaluator<'a> {
     pub fn dbg(&self) {
+        println!("{}", "-".repeat(24));
         println!("{} EVALUATOR SNAPSHOT:", self.env.coord);
-        println!("\nOPS:\n\t ** {}", self.op_queue.iter()
+        println!("\nOPS:\n-- {}", self.op_queue.iter()
             .map(|o| o.otype.to_string())
             .collect::<Vec<_>>()
-            .join("\n\t ** "));
-        println!("VALS:\n\t ** {}", self.val_queue.iter()
+            .join("\n-- "));
+        println!("\nVALS:\n** {}", self.val_queue.iter()
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
-            .join("\n\t ** "));
-        println!("EXPRS:\n\t ** {}", self.exp_queue.iter()
+            .join("\n** "));
+        println!("\nEXPRS:\n>> {}", self.exp_queue.iter()
             .map(|e| e.to_string())
             .collect::<Vec<_>>()
-            .join("\n\t ** "));
-        println!();
+            .join("\n>> "));
+        println!("{}", "-".repeat(24));
     }
 
     pub fn was_evaluation_consistent(&self) -> bool {
@@ -221,5 +231,31 @@ impl<'a> Evaluator<'a> {
             }
         }
         false
+    }
+}
+
+impl Display for crate::evaluator::operation::OperationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            match &self {
+                BINARY_OP(_) => "BINARY",
+                OPTIONAL_OP => "OPTIONAL",
+                LAZY_LOGIC_OP(_) => "LOGIC (LAZY)",
+                LOGIC_OP(_) => "LOGIC",
+                UNARY_OP(_) => "UNARY",
+                VARASSIGN_OP(_, _) => "VAR ASSIGN",
+                SCOPE_CLOSURE_OP(_) => "CLOSURE",
+                RETURN_CLEANUP => "RETURN",
+                ASSOC_GROWER_SETUPPER_OP(_, _, _) => "ASSOC GROW",
+                ASSOC_GROWER_RESOLVER_OP(_, _, _) => "ASSOC GROW (RES)",
+                PULL_OP(_) => "PULL",
+                BIND_APPLICATION_ARGS_TO_PARAMS_OP(_, _) => "ARGBIND",
+                AT_APPLICABLE_RESOLVER_OP => "APPLICATION",
+                ASSOC_PUSHER_OP => "PUSH",
+                ITERATIVE_PARAM_BINDER(_, _, _) => "@@ITER",
+                TI_REBINDER_OP => "TIREBIND",
+                PRINT_OP(_) => "PRINT"
+            }
+        )
     }
 }

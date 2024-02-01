@@ -244,6 +244,20 @@ assoc @@ ($"\tposition n°{idx} of association is the pair ({it}, {ti})\n")
 "hello" @@ it  == "o"
 "hello" @@ idx == 4
 ```
+
+Feeding `_` to an @@-applicable will cause the applicable to only stop when it encounters a return value.
+```
+generate_odd_digits = |amount| = {
+    result = !!:[1]
+    _@@ { result@@idx == amount - 1 and return result
+    result << | result @@ idx + 1, result @@ ti + 2|
+    }
+}
+
+10 @ generate_odd_digits
+```
+
+
 When you store an unapplied expression into a variable, you can use that variable in the expression's body.
 ```
 countdown = |tick| [

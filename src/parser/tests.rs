@@ -120,9 +120,9 @@ mod tests {
         let mut p = Parser::from_tokens(
             vec![],
             &mut es);
-        let expr = p.build_expression();
-        dbg!(&expr);
-        assert!(expr.type_equals(&NOTANEXPR));
+        p.parse();
+        let exprs = p.into_expressions();
+        assert!(exprs.is_empty());
     }
 
     #[test]

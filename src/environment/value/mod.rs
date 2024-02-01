@@ -27,7 +27,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn extract(&self) -> Value {
+    pub fn unwrap_option(&self) -> Value {
         match self {
             OPTIONVAL(Some(val)) => { val.deref().clone() }
             _ => { ERRVAL }
@@ -128,36 +128,44 @@ impl Ord for Value {
     }
 }
 
-impl Display for Value {
+impl Display for Value { // not in boilerplate because it's an important user-facing implementation.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LAZYVAL(_) => { f.write_str("(not yet evaluated)") }
-            INTEGERVAL(int) => { f.write_str(&*int.to_string()) }
-            FLOATVAL(flt) => { f.write_str(&*format!("{}{}", flt, if flt.fract() > 0.0 { "" } else { ".0" })) }
-            STRINGVAL(str) => { f.write_str(str) }
-            BOOLEANVAL(boo) => { f.write_str(&*boo.to_string()) }
-            LAMBDAVAL { .. } => { f.write_str("applicable") }
+        let string = match self {
+            LAZYVAL(_) => { "(not yet evaluated)".to_string() }
+            INTEGERVAL(int) => { int.to_string() }
+            FLOATVAL(flt) => { format!("{flt}{}", if flt.fract() > 0.0 { "" } else { ".0" }) }
+            STRINGVAL(str) => { str.clone() }
+            BOOLEANVAL(boo) => { boo.to_string() }
+            LAMBDAVAL { .. } => { "applicable".to_string() }
             ASSOCIATIONVAL(map) => {
-                let mut str = map.map.iter()
-                    .map(|(k, v)| format!("{}: {}, ", k, v))
-                    .reduce(|str1, str2| str1 + &*str2)
-                    .unwrap_or(String::new());
-                str.pop();
-                str.pop();
-                if let Some(val) = &map.default { str += &*format!(", _: {}", val); }
-                f.write_str(&*format!("[{}]", str))
+                let mut pairs = map.map.iter()
+                    .map(|(k, v)| format!("{k}: {v}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let keys = map.map.iter()
+                    .map(|(k, v)| k.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let vals = map.map.iter()
+                    .map(|(k, v)| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                if let Some(val) = &map.default { pairs += format!(", _: {}", val).as_str(); }
+                format!("[{pairs}]\nkeys:   [{keys}]\nvalues: [{vals}]")
             }
-            NOTAVAL => { f.write_str("no input.") }
-            ERRVAL => { f.write_str(&*"ERR".to_string().red()) }
-            RETURNVAL(val) => { f.write_str(&*val.to_string()) }
+            NOTAVAL => { "NOTAVAL".to_string() }
+            ERRVAL => { "ERR".to_string().red() }
+            RETURNVAL(val) => { val.to_string() }
             OPTIONVAL(val) => {
                 match val {
-                    None => { f.write_str("?_") }
-                    Some(v) => { f.write_str(&*format!("?{}", v)) }
+                    None => { "?_".to_string() }
+                    Some(v) => { format!("?{}", v) }
                 }
             }
-            UNDERSCOREVAL => f.write_str("_")
-        }
+            UNDERSCOREVAL => "_".to_string()
+        };
+        f.write_str(string.as_str())
     }
 }
 
@@ -284,14 +292,14 @@ impl Value {
         }
     }
 
-    pub(crate) fn min_them(&self, other: &Value) -> Value {
+    pub fn min_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(min(*i, *j)) } }
             (_, _) => ERRVAL
         }
     }
 
-    pub(crate) fn max_them(&self, other: &Value) -> Value {
+    pub fn max_them(&self, other: &Value) -> Value {
         match (self, other) {
             (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(max(*i, *j)) } }
             (_, _) => ERRVAL

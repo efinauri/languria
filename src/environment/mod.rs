@@ -7,12 +7,12 @@ use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
 
-pub(crate) mod value;
+pub mod value;
 
 pub struct Environment {
-    pub(crate) scopes: Vec<Scope>,
-    pub(crate) last_print_line: usize,
-    pub(crate) coord: Coord,
+    pub scopes: Vec<Scope>,
+    pub last_print_line: usize,
+    pub coord: Coord,
 }
 
 impl Environment {
@@ -24,22 +24,16 @@ impl Environment {
         }
     }
 
-    pub fn create_or_reuse_scope(&mut self, reuse: bool) {
-        if reuse {
-            assert!(self.scopes.len() > 1);
-            self.scopes.last_mut().unwrap().times_recycled += 1;
-        }
-        else {
-            println!("create {} {}", self.scopes.len() + 1, &self.coord);
-            let mut scope = Scope::new();
-            scope.coord = self.coord.clone();
-            self.scopes.push(scope);
-        }
+    pub fn create_scope(&mut self) {
+        // println!("{}create {} {}", " ".repeat(self.scopes.len()), self.scopes.len() + 1, &self.coord);
+        let mut scope = Scope::new();
+        scope.coord = self.coord.clone();
+        self.scopes.push(scope);
     }
 
     pub fn destroy_scope(&mut self) {
         assert!(self.scopes.len() > 1);
-        println!("destroy {} {}", self.scopes.len() - 1, &self.coord);
+        // println!("{}destroy {} {}", " ".repeat(self.scopes.len()-1), self.scopes.len() - 1, &self.coord);
         if self.scopes.len() > 1 { self.scopes.pop(); }
     }
 
@@ -86,7 +80,7 @@ impl Environment {
 #[derive(Debug)]
 pub struct Scope {
     variables: HashMap<String, Value>,
-    pub(crate) entry_point: String,
+    pub entry_point: String,
     coord: Coord,
     times_recycled: usize,
 }
@@ -103,6 +97,8 @@ impl Scope {
 
     fn read(&self, varname: &String) -> Option<&Value> { self.variables.get(varname) }
 
+    /// NOTE: particular assigns such as =% implicitly default to = if the literal isn't containing a value already.
+    /// should this be considered an error?
     fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let old_val = &self.read(varname);
         let val_to_write = match old_val {

@@ -1,41 +1,11 @@
-use std::fmt::{Display, Formatter};
-
 use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
-use crate::errors::ErrorType::*;
 use crate::evaluator::Evaluator;
 use crate::evaluator::operation::OperationType::*;
 use crate::lexer::{Coord, Token};
-use crate::lexer::TokenType::*;
 use crate::parser::Expression;
 
 mod lib;
-
-impl Display for OperationType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            match &self {
-                BINARY_OP(_) => "BINARY",
-                OPTIONAL_OP => "OPTIONAL",
-                LAZY_LOGIC_OP(_) => "LOGIC (LAZY)",
-                LOGIC_OP(_) => "LOGIC",
-                UNARY_OP(_) => "UNARY",
-                VARASSIGN_OP(str, _) => "VAR ASSIGN",
-                SCOPE_CLOSURE_OP(_) => "CLOSURE",
-                RETURN_CLEANUP => "RETURN",
-                ASSOC_GROWER_SETUPPER_OP(_, _, _) => "ASSOC GROW",
-                ASSOC_GROWER_RESOLVER_OP(_, _, _) => "ASSOC GROW (RES)",
-                PULL_OP(_) => "PULL",
-                BIND_APPLICATION_ARGS_TO_PARAMS_OP(_, _) => "ARGBIND",
-                AT_APPLICABLE_RESOLVER_OP => "APPLICATION",
-                ASSOC_PUSHER_OP => "PUSH",
-                ITERATIVE_PARAM_BINDER(_, _, _) => "@@ITER",
-                TI_REBINDER_OP => "TIREBIND",
-                PRINT_OP(_) => "PRINT"
-            }
-        )
-    }
-}
 
 #[derive(Debug)]
 #[allow(non_camel_case_types)]
@@ -105,122 +75,33 @@ impl Operation {
 
     /// removes the operation's pending state. used when the operation is popped from the queue
     /// without being normally executed.
-    pub(crate) fn flush(&self, eval: &mut Evaluator) {
+    pub fn flush(&self, eval: &mut Evaluator) {
+        // the +1 is counting the operation that flush() was called from.
         // trim values calculated for its future execution.
         eval.val_queue.truncate(1 + eval.val_queue.len() - self.needed_to_keep_values());
-        // trim expression that would've calculated the rest of the needed values.
+        // trim the expressions that would've calculated the rest of the needed values.
         eval.exp_queue.truncate(1 + eval.exp_queue.len() + self.seen_values - self.needed_to_see_values);
     }
 
-    pub fn set_coord(&mut self, coord: &Coord) { self.coord = (*coord).clone() }
+    pub fn update_coord(&mut self, coord: &Coord) { self.coord = (*coord).clone() }
 
     pub fn value(&self, eval: &mut Evaluator, previous_val: &Value) -> Value {
         match &self.otype {
-            PRINT_OP(tag) => {
-                let val = eval.val_queue.pop_back().unwrap();
-                val.print_it(eval.env, tag.to_owned());
-                val.clone()
-            }
+            PRINT_OP(tag) => { lib::print_op(eval, tag) }
             BINARY_OP(tok) => { lib::binary_op(eval, tok) }
             OPTIONAL_OP => { OPTIONVAL(Some(Box::from(eval.val_queue.pop_back().unwrap()))) }
-            LAZY_LOGIC_OP(tok) => {
-                match lib::lazy_logic_op(eval, &tok) {
-                    Ok(value) => value,
-                    Err(value) => return value,
-                }
-            }
-            LOGIC_OP(tok) => {
-                let rhs = eval.val_queue.pop_back().unwrap();
-                let lhs = eval.val_queue.pop_back().unwrap();
-                match (rhs.as_bool_val(), &tok.ttype, lhs.as_bool_val()) {
-                    (BOOLEANVAL(b1), AND, BOOLEANVAL(b2)) => BOOLEANVAL(b1 && b2),
-                    (BOOLEANVAL(b1), OR, BOOLEANVAL(b2)) => BOOLEANVAL(b1 || b2),
-                    (BOOLEANVAL(b1), XOR, BOOLEANVAL(b2)) => BOOLEANVAL(b1 ^ b2),
-                    _ => eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![lhs, rhs]))
-                }
-            }
-            UNARY_OP(tok) => {
-                let val = eval.val_queue.pop_back().unwrap();
-                let try_unary = match tok.ttype {
-                    EXTRACT => val.extract(),
-                    ASBOOL => { val.as_bool_val() }
-                    NOT => { val.not_it() }
-                    MINUS => { val.minus_it() }
-                    _ => {
-                        eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![val.clone()]))
-                    }
-                };
-                if try_unary.type_equals(&ERRVAL) {
-                    eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![val]))
-                } else { try_unary }
-            }
-            VARASSIGN_OP(varname, op) => {
-                eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op)
-            }
-            SCOPE_CLOSURE_OP(_) => {
-                eval.dbg();
-                eval.env.destroy_scope();
-                previous_val.to_owned()
-            }
-            RETURN_CLEANUP => {
-                let return_val = eval.val_queue.pop_back().unwrap_or(previous_val.to_owned());
-                while let Some(op) = eval.op_queue.pop_back() {
-                    op.flush(eval);
-                    if let SCOPE_CLOSURE_OP(_) = op.otype { break; }
-                }
-                // if, after having exited block, we were also inside an @@ application, exit from that as well.
-                // the exited iteration was also enqueuing 1 exp and 1 val.
-                if let Some(op) = eval.op_queue.back() {
-                    if let ITERATIVE_PARAM_BINDER(_, _, _) = op.otype {
-                        eval.op_queue.pop_back().unwrap().flush(eval);
-                        eval.exp_queue.pop_back();
-                        eval.val_queue.pop_back();
-                    }
-                }
-                &eval.dbg();
-                eval.env.destroy_scope();
-                return_val
-            }
-            ASSOC_GROWER_SETUPPER_OP(map, n, is_lazy) => {
-                let resolver = Operation::from_type(ASSOC_GROWER_RESOLVER_OP(map.to_owned(), *n, *is_lazy));
-                // if lazy, don't need to evaluate value and can call resolver directly. else, first evaluate value.
-                if *is_lazy {
-                    eval.val_queue.push_back(LAZYVAL(Box::from(eval.exp_queue.pop_back().unwrap())));
-                    return resolver.value(eval, previous_val);
-                } else {
-                    eval.op_queue.push_back(Operation::from_type(ASSOC_GROWER_RESOLVER_OP(map.to_owned(), *n, *is_lazy)));
-                    NOTAVAL
-                }
-            }
-            ASSOC_GROWER_RESOLVER_OP(map, n, is_lazy) => {
-                let mut map = map.to_owned();
-                let v = eval.val_queue.pop_back().unwrap();
-                let k = eval.val_queue.pop_back().unwrap();
-                if k.type_equals(&UNDERSCOREVAL) {
-                    map.default = Some(Box::from(v.to_owned()));
-                } else { map.insert(k, v); }
-                if *n <= 1 { return ASSOCIATIONVAL(map); }
-                eval.op_queue.push_back(Operation::from_type(ASSOC_GROWER_SETUPPER_OP(map, n - 1, *is_lazy)));
-                NOTAVAL
-            }
+            LAZY_LOGIC_OP(tok) => { lib::lazy_logic_op(eval, &tok) }
+            LOGIC_OP(tok) => { lib::logic_op(eval, &tok) }
+            UNARY_OP(tok) => { lib::unary_op(eval, tok) }
+            VARASSIGN_OP(varname, op) => { eval.env.write(varname, &eval.val_queue.pop_back().unwrap(), op) }
+            SCOPE_CLOSURE_OP(_) => { lib::scope_closure_op(eval, previous_val) }
+            RETURN_CLEANUP => { lib::return_cleanup_op(eval) }
+            ASSOC_GROWER_SETUPPER_OP(map, n, is_lazy) => { lib::assoc_grower_setupper_op(eval, previous_val, map, n, is_lazy) }
+            ASSOC_GROWER_RESOLVER_OP(map, n, is_lazy) => { lib::assoc_grower_resolver_op(eval, map, n, is_lazy) }
             PULL_OP(tok) => { lib::pull_op(eval, tok) }
-            BIND_APPLICATION_ARGS_TO_PARAMS_OP(amount_of_passed_args, tok) => {
-                match lib::bind_application_args_to_params_op(eval, amount_of_passed_args, tok) {
-                    Ok(value) => value,
-                    Err(value) => return value,
-                }
-            }
-            ITERATIVE_PARAM_BINDER(past_iterations, iterand, body) => {
-                match lib::iterative_param_binder_op(eval, past_iterations, iterand, body) {
-                    Ok(value) => value,
-                    Err(value) => return value,
-                }
-            }
-            TI_REBINDER_OP => {
-                let ti = eval.val_queue.pop_back().unwrap();
-                eval.env.write_binding(&"ti".to_string(), &ti);
-                NOTAVAL
-            }
+            BIND_APPLICATION_ARGS_TO_PARAMS_OP(amount_of_passed_args, tok) => { lib::bind_application_args_to_params_op(eval, amount_of_passed_args, tok) }
+            ITERATIVE_PARAM_BINDER(past_iterations, iterand, body) => { lib::iterative_param_binder_op(eval, past_iterations, iterand, body) }
+            TI_REBINDER_OP => { lib::ti_rebinder_op(eval) }
             AT_APPLICABLE_RESOLVER_OP => { lib::at_applicable_resolver_op(eval) }
             ASSOC_PUSHER_OP => { lib::assoc_pusher_op(eval) }
         }

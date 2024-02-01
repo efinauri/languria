@@ -46,6 +46,7 @@ mod tests {
                 val_queue: Default::default(),
                 scribe,
                 env,
+                verbose: false
             }
         }
     }
