@@ -17,16 +17,20 @@ __TABLE OF CONTENTS__
 
 Languria is a toy programming language made for self-teaching and personal use, written by referencing the excellent [crafting intepreters](https://craftinginterpreters.com/) book by R. Nystrom.
 
-The name (a homophone for "the watermelon" in italian) is the first thing that came to mind that starts with lang-. After having looked the name up, I learned that Languria is also a [nice looking beetle](https://en.wikipedia.org/wiki/Languria), which easily became the language's mascot.
+The name (a homophone for "the watermelon" in italian) is the first thing that came to mind that starts with lang-. 
+After having looked the name up, I learned that Languria is also a [nice looking beetle](https://en.wikipedia.org/wiki/Languria), which easily became the language's mascot.
 
 # EXPRESSIONS
 
-An expression is either a primitive value, or any section of the code that evaluates to a primitive value.
-A value is an instance of a primitive type (`int`, `str`, ...). In languria, everything is an expression.
+When a piece of code produces a value (an instance of one of the types in the table below), it's called an expression. When, instead, it represents an instruction, it's called a statement.
+
+In Languria, statements are always expressions; that is to say, every part of the code that can be thought of as an action taken by the program also produces a byproduct value.
+
 ```
-1 // values themselves are expressions.
+1 // values themselves are expressions. needless to say, a value evaluates to itself.
 (2 + 3) * (4 + 5)  // both (2 + 3) and (4 + 5) are expressions. Of course, the entire line is also an expression.
 ```
+
 This is an overview of the primitive types:
 
 | Type        | Example      | Overview                     |
@@ -41,6 +45,7 @@ This is an overview of the primitive types:
 | Literal     | `x`          | -                            |
 
 A scope, which is a section of code between {}, evaluates to whatever is explicitly returned in the middle of it, or what's produced by the last expression in the scope.
+
 ```
 rps = {
     return "rock"
@@ -52,36 +57,48 @@ phrase = {
     "are"
     "you"
 }  
-"{phrase} {rps}" == "you rock"  // strings accept tokens between curly brackets by default.
+"{phrase} {rps}" == "you rock"  // strings accept by default tokens between curly brackets.
 ```
+
 ## VARIABLES
 
 A variable is a literal that is holding a value.
+
 ```
-x = 1  // variables cannot be declared without being initialized.
+x = 1  // variables can only come into existence when they are assigned a value.
 1 == (x = 1)  // an assigment expression returns the assigned value.
 x => 2  // equivalent to x = max(x, 2)
 x =< 1  // equivalent to x = min(x, 1)
 // other assign operators: =*, =/, =%, =^
 ```
+
 ## PRINT
 
-You can print an expression by placing an `$` before it. The `$expr` expression evaluates to `expr`.
+You can print the value produced by an expression by prepending `$` to it. The `$expr` expression evaluates to `expr`.
+
 ```
 $"Hello, world!"
 $x = 1 + 2 // an assignment is an expression that evaluates to the assigned value, so it can be printed.
 y = 2 * $(3 + 4)  // you can also print a subexpression in the middle of a bigger expression.
 ```
+
 Multiple `$` on the same line are printed separated by a comma, in the order in which the program executes. This is, in some cases, not intuitive.
-In the example below, we can rest assured that the assignment is the last thing to be evaluated, so the last thing fed to STDIN will be 25. However, there's no good reason to expect that this whole line will print "9 16 25" as opposed to "16 9 25".
+
+In the example below, we can rest assured that the assignment is the last thing to be evaluated, so the last thing fed to STDIN will be 25. 
+However, there's no good reason to expect that this whole line will print "9 16 25" as opposed to "16 9 25".
+
 ```
 $math = $(3 * 3) + $(4 * 4)
 ```
+
 To remedy this, you can also tag any of your print statements as such.
+
 ```
 $math = $<a>(3 * 3) + $<b>(4 * 4)  // prints "a: 9 b: 16 25"
 ```
-`$$` prints the current location of the line. Note that everything is a value, including `$$`!
+
+`$$` prints the current location of the line. Note that `$$` is an expression!
+
 ```
 $$ $3  // [test.lgr:4] 3
 $$ * 2  // not only this prints [REPL:1], but it also evaluates to [REPL:1][REPL:1]
@@ -91,6 +108,7 @@ $$ * 2  // not only this prints [REPL:1], but it also evaluates to [REPL:1][REPL
 ### STRINGS
 
 The following expressions all evaluate to `"Hello, world!"`:
+
 ```
 "Hello, " + "world!"
 "He" + 2*"l" + "o, world!"
@@ -112,8 +130,8 @@ yes_int = ?2
 no = ?_ // the empty option
 ```
 
-To extract a value from an option that contains one, you can use the `|>` operator. 
-This operation fails if there's no value to pull out.
+To pull out a value from an option that contains one, you can use the `|>` operator. 
+This operation fails if the option isn't holding a value.
 
 ```
 ?3|> == 3
@@ -141,7 +159,8 @@ The postfix operator `?!` can be used to interpret a value as a boolean:
 
 Integers and floats are 64bit and signed. Languria implicitly converts between the two if needed be.
 
-The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both operands are ints), `^` (exponentiation, also used for roots if you pass a fractional exponent)
+The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both operands are ints), `^` (exponentiation, also used for roots if you pass a fractional exponent).
+
 ```
 17 % 3 == 2
 17/3  // 5
@@ -157,6 +176,7 @@ An association is a mapping from certain values (keys) to certain values (still 
 You can pull a value from an association using the operator `>>` pointing to its key. The result of this operation is an option, containing the value you were looking for inside it if the pull was successful.
 
 You can also skip this extra step and get the associated value right away through the `|>>` operator.
+
 ```
 $int_to_name = [1: "one", 2: "two", _: "not saying"]
 (int_to_name >>2) == ?"two"
@@ -168,6 +188,7 @@ no_default = [1: 2]
 
 [1: 1, "two": 2, 3: ?3]  // neither keys nor values have to share their types.
 ```
+
 If you're following along and trying the commands out, you probably noticed something strange the first line of the above example:
 its REPL output was `[1: (not yet evaluated), 2: (not yet evaluated), _: (not yet evaluated)]`.
 
@@ -175,6 +196,7 @@ This happens because, by default, values in associations are lazily evaluated, i
 In the case above, being queried by `2` caused the key `"three"` to evaluate to that string.
 
 When needed, you can prepend `!!` to an association to evaluate its values right away.
+
 ```
 !![3: $"now", 1: $"printing", 2: $"everything"]
 ```
@@ -193,6 +215,7 @@ Associations are, given certain conditions, treated as being in particular state
 An association is in a _set state_ when all of its keys map to booleans, and it's in a _list state_ when its keys are the integers 0 to n.
 
 Lists and sets are easier to both instantiate and operate:
+
 ```
 //  the :[items] shorthand, when declaring a list, refers to the fact that the right side of the key:value relationships can be inferred.
 list = :["faster", "way", "to", "declare", "associations"]
@@ -203,6 +226,7 @@ set = [:"faster", "way", "to", "declare", "associations"]
 ```
 
 If the side of the key/value pair that we care about is a contiguous range of integers from a to b not including b, we can use this range syntax:
+
 ```
 same_list = !!:[1..6]
 // if the range start is greater than the range's end, the numbers are reversed. 
@@ -219,6 +243,7 @@ and that undergoes an additional evaluation phase, called application, if fed va
 
 During an application, the applicable's body is evaluated with those values in place of the placeholders.
 Below are some basic examples of normal @-applications.
+
 ```
 add_one = |n| n + 1
 |2| @ add_one == 3
@@ -236,6 +261,7 @@ The operator `@@` is, instead, special in terms of its input, effect, receiver a
 `it` stores the key of the element, `ti` its value, and `idx` holds the number of past iterations.
 
 The value produced by such an application is the one produced by the last expression in the last iteration.
+
 ```
 assoc = [1: 2, 3: 4]
 assoc @@ ($"\tposition n°{idx} of association is the pair ({it}, {ti})\n")
@@ -269,7 +295,8 @@ countdown = |tick| [
 5 @ countdown  // prints 4 3 2 1 and returns 0
 ```
 
-If you wish to define an applicable that accepts more than one value, you can use a more traditional syntax and specify its arguments like such:
+You can pass request more than one value to be fed to an applicable by listing, separated by a comma, the required placeholders
+in the order that they need to be fed.
 
 ```
 add = |a, b| a + b
