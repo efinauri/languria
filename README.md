@@ -246,8 +246,9 @@ assoc @@ ($"\tposition n°{idx} of association is the pair ({it}, {ti})\n")
 ```
 
 Feeding `_` to an @@-applicable will cause the applicable to only stop when it encounters a return value.
+
 ```
-generate_odd_digits = |amount| = {
+generate_odd_digits = |amount| {
     result = !!:[1]
     _@@ { result@@idx == amount - 1 and return result
     result << | result @@ idx + 1, result @@ ti + 2|
@@ -257,8 +258,8 @@ generate_odd_digits = |amount| = {
 10 @ generate_odd_digits
 ```
 
-
 When you store an unapplied expression into a variable, you can use that variable in the expression's body.
+
 ```
 countdown = |tick| [
   tick > 1: |$(tick - 1)| @ countdown,
@@ -267,7 +268,9 @@ countdown = |tick| [
 
 5 @ countdown  // prints 4 3 2 1 and returns 0
 ```
+
 If you wish to define an applicable that accepts more than one value, you can use a more traditional syntax and specify its arguments like such:
+
 ```
 add = |a, b| a + b
 |3, 2| @ add == 5 
@@ -286,4 +289,3 @@ map_val = |assoc, fn_val| {
 
 |:[1..6], (|n|n^2)| @ map_val  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
 ```
-Note that in this case you don't have access to the default placeholders, and you need to stick to the calling syntax `|arguments| @ applicable`.
