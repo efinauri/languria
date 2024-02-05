@@ -22,7 +22,7 @@ After having looked the name up, I learned that Languria is also a [nice looking
 
 # EXPRESSIONS
 
-When a piece of code produces a value (an instance of one of the types in the table below), it's called an expression. When, instead, it represents an instruction, it's called a statement.
+When a piece of code produces a _value_ (an instance of one of the types in the table below), it's called an _expression_. When, instead, it represents an instruction, it's called a _statement_.
 
 In Languria, statements are always expressions; that is to say, every part of the code that can be thought of as an action taken by the program also produces a byproduct value.
 
@@ -171,7 +171,7 @@ The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both op
 
 ### ASSOCIATIONS
 
-An association is a mapping from certain values (keys) to certain values (still called values). The keys are ordered and cannot repeat.
+An _association_ is a mapping from certain values (_keys_) to certain values (still called _values_). The keys are ordered and cannot repeat.
 
 You can pull a value from an association using the operator `>>` pointing to its key. The result of this operation is an option, containing the value you were looking for inside it if the pull was successful.
 
@@ -238,8 +238,8 @@ reversed_list = !!:[5..0]
 
 ### APPLICABLES
 
-An applicable is an expression that holds onto a piece of code with some placeholders, 
-and that undergoes an additional evaluation phase, called application, if fed values through the operators `@` or `@@`.
+An _applicable_ is an expression that holds onto a piece of code with some placeholders, 
+and that undergoes an additional evaluation phase, called _application_, if fed values through the operators `@` or `@@`.
 During an application, the applicable's body is evaluated with those values in place of the placeholders.
 
 Let's examine the usage of an @-applicable:
@@ -251,30 +251,23 @@ add_dot = || it + "."
 "hello"
     @ repeat(2, " ")
     @ add_dot
-    @ || (it + "..")
+    @ (it + "..")
 // prints "hello hello..."
 ```
 
 In this example, `repeat` is receiving the values: `"hello"`, `2`, and `" "`. 
 
-The first of the three has "preferential treatment": during the application phase, it alone gets to the applicable via `@`; 
+The first of the three, called _main value_, has "preferential treatment": during the application phase, it alone gets to the applicable via `@`; 
 additionally, when defining an applicable, it maps to the builtin placeholder `it`. 
-The other "auxiliary" values (if any are needed) instead map to the named placeholders defined between pipes, before the applicable's body.
+The others, called _contour values_, instead map to the named placeholders defined between pipes, before the applicable's body.
 
-As for `add_dot`, note that even though it requires no auxiliary values, it was necessary to pass an empty piping `||` when storing the applicable into it.
+As for `add_dot`, note that even though it takes no contour values, it was necessary to pass an empty piping `||` when storing the applicable into it.
 On the contrary, during an application empty parentheses are optional.
 
-Lastly, the example above also shows that, when no auxiliary values are needed, it's possible to directly apply a value 
-to an expression with the `it` placeholder. The consideration made above about parentheses and pipes still apply.
+Lastly, the example above also shows that, when no contour values are needed, it's possible to directly apply a value 
+to an expression with the `it` placeholder.
 
-
-The operator `@@` is, instead, special in terms of its input, effect, receiver and output.
-- The input is an association, or anything that could otherwise be thought of as a collection of elements (currently only strings fit this second category).
-- The effect of this application on an expression is to evaluate the expression's body once for every element.
-- The body of the applicable, instead of requiring the named placeholders seen above, uses three built-in placeholders:
-`it` stores the key of the element, `ti` its value, and `idx` holds the number of past iterations.
-
-The value produced by such an application is the one produced by the last expression in the last iteration.
+What follow are some examples of an @@-application:
 
 ```
 assoc = [1: 2, 3: 4]
@@ -285,10 +278,21 @@ assoc @@ ($"\tposition n°{idx} of association is the pair ({it}, {ti})\n")
 "hello" @@ idx == 4
 ```
 
-Feeding `_` to an @@-applicable will cause the applicable to only stop when it encounters a return value.
+@@-applications at the moment only accept a main value. This value needs to be a composite data type (an association or a string).
+
+@@-applying a value on an expression evaluates the expression's body once for every element belonging to the input value.
+Compared to a @-application, the exposed placeholders change as such:
+- `it` now stores the key of the element;
+- `ti` its value;
+- `idx` holds the number of past iterations.
+
+The value produced by @@-applications is the one produced by the last expression in the last iteration.
+
+Feeding `_` to an @@-applicable will cause it to only stop when it encounters a return value.
+In the example that follows, also note it was useful to store the outermost it placeholder in a variable in order to reuse its value in the inner application.
 
 ```
-generate_odd_digits = |amount| {
+generate_odd_digits = || { amount = it
     result = !!:[1]
     _@@ { result@@idx == amount - 1 and return result
     result << | result @@ idx + 1, result @@ ti + 2|
@@ -301,32 +305,31 @@ generate_odd_digits = |amount| {
 When you store an unapplied expression into a variable, you can use that variable in the expression's body.
 
 ```
-countdown = |tick| [
-  tick > 1: |$(tick - 1)| @ countdown,
+countdown = || [
+  $it > 1: (it - 1) @ countdown,
   _: 0
 ] |>> true
 
 5 @ countdown  // prints 4 3 2 1 and returns 0
 ```
 
-You can pass request more than one value to be fed to an applicable by listing, separated by a comma, the required placeholders
-in the order that they need to be fed.
+Some more examples of applicables:
 
 ```
-add = |a, b| a + b
-|3, 2| @ add == 5 
+add = |other| it + other
+3 @ add(2) == 5 
 
-ok_or = |opt, default| [opt?!: opt|>, _: default] |>> true
-|?3, 4| @ ok_or == 3
-|?_, 4| @ ok_or == 4
+ok_or = |default| [it?!: it|>, _: default] |>> true
+?3 @ ok_or(4) == 3
+?_ @ ok_or(4) == 4
 
-map_val = |assoc, fn_val| {
+map_val = |fn_val| {
     new_assoc = []
-    assoc @@ {
+    it @@ {
         new_assoc << |ti, it @ fn_val|
     }
     new_assoc
 }
 
-|:[1..6], (|n|n^2)| @ map_val  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
+:[1..6] @ map_val(||it^2)  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
 ```

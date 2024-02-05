@@ -1,4 +1,4 @@
-generate_primes_smaller_than = |size| {
+generate_primes_smaller_than = || { size = it
     prime_factors = !!:[2, 3]
     candidate_prime = 5
     _@@ { candidate_prime >= size and return prime_factors

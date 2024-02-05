@@ -33,9 +33,13 @@ impl ErrorScribe {
         self.enact_termination_policy();
     }
 
-    pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
 
-    pub fn clear_errors(&mut self) { self.errors.clear() }
+    pub fn clear_errors(&mut self) {
+        self.errors.clear()
+    }
 
     pub fn enact_termination_policy(&self) {
         if self.has_errors() && self.termination_policy == TerminationPolicy::STRICT {
@@ -70,7 +74,7 @@ pub enum ErrorType {
     EVAL_INVALID_PUSH,
     EVAL_INVALID_RANGE,
     EVAL_UNEXPECTED_EXPRESSION,
-    EVAL_UNEXPECTED_NUMBER_OF_PARAMS{passed: usize, expected: usize},
+    EVAL_UNEXPECTED_NUMBER_OF_PARAMS { passed: usize, expected: usize },
 }
 
 #[derive(Debug)]
@@ -86,7 +90,9 @@ impl Error {
             coord: coord.clone(),
         }
     }
-    fn err_location(&self) -> String { format!("[{}:{}] ", self.coord.row, self.coord.column) }
+    fn err_location(&self) -> String {
+        format!("[{}:{}] ", self.coord.row, self.coord.column)
+    }
 }
 
 impl Display for Error {

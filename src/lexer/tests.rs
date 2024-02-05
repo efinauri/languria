@@ -3,13 +3,16 @@ mod tests {
     use std::iter::zip;
 
     use crate::errors::{ErrorScribe, TerminationPolicy};
-    use crate::lexer::{Lexer, Token, TokenType};
     use crate::lexer::TokenType::*;
+    use crate::lexer::{Lexer, Token, TokenType};
     use crate::WalksCollection;
 
     impl Token {
         pub fn debug(ttype: TokenType) -> Token {
-            Token { ttype, coord: Default::default() }
+            Token {
+                ttype,
+                coord: Default::default(),
+            }
         }
     }
     impl ErrorScribe {
@@ -90,7 +93,9 @@ mod tests {
         let tt = l.consume_num('0');
         let int = match tt {
             INTEGER(int) => int,
-            _ => { panic!("test failed") }
+            _ => {
+                panic!("test failed")
+            }
         };
         assert_eq!(int, 123456);
     }
@@ -102,7 +107,9 @@ mod tests {
         let tt = l.consume_num('0');
         let flt = match tt {
             FLOAT(flt) => flt,
-            _ => { panic!("test failed") }
+            _ => {
+                panic!("test failed")
+            }
         };
         assert!(flt - 0.28 < 0.00001);
     }
@@ -114,7 +121,9 @@ mod tests {
         let tt = l.consume_num('2');
         let int = match tt {
             INTEGER(int) => int,
-            _ => { panic!("test failed") }
+            _ => {
+                panic!("test failed")
+            }
         };
         assert_eq!(2345, int);
     }
@@ -127,7 +136,9 @@ mod tests {
         let tt = l.consume_str('"');
         let str = match tt {
             STRING(str) => str,
-            _ => { panic!("test failed") }
+            _ => {
+                panic!("test failed")
+            }
         };
         dbg!(&str);
         assert_eq!(str, "hello, \"dude\"!");
@@ -141,7 +152,9 @@ mod tests {
         let ttype = l.consume_str('"');
         let str = match ttype {
             STRING(str) => str,
-            _ => { panic!("test failed") }
+            _ => {
+                panic!("test failed")
+            }
         };
         dbg!(&str);
         assert!(str.eq("→→↓đ”€€ſæð”€ſ"));
@@ -181,7 +194,7 @@ mod tests {
             STRING("hello".parse().unwrap()),
             GT,
             IT,
-            QUESTIONMARK
+            QUESTIONMARK,
         ];
         let toks = l.produce_tokens();
         dbg!(toks);

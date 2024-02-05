@@ -3,11 +3,11 @@ use std::ops::Deref;
 
 use log::error;
 
-use crate::environment::Environment;
-use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
-use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::environment::value::{Value, ValueMap};
+use crate::environment::Environment;
 use crate::errors::ErrorType::EVAL_INVALID_PUSH;
+use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::operation::Operation;
 use crate::evaluator::operation::OperationType::*;
 use crate::evaluator::OperationStatus::*;
@@ -15,8 +15,8 @@ use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::{AssociationState, Expression};
 
-mod tests;
 mod lib;
+mod tests;
 
 pub(crate) mod operation;
 
@@ -52,11 +52,13 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    pub fn read_var(&mut self, varname: &String) -> Value { self.env.read(varname, self.scribe).clone() }
+    pub fn read_var(&mut self, varname: &String) -> Value {
+        self.env.read(varname, self.scribe).clone()
+    }
 
     fn error(&mut self, etype: ErrorType) -> Value {
-        self.scribe.annotate_error(Error::on_coord(
-            &self.env.coord, etype));
+        self.scribe
+            .annotate_error(Error::on_coord(&self.env.coord, etype));
         ERRVAL
     }
 
@@ -69,14 +71,21 @@ impl<'a> Evaluator<'a> {
         if self.op_status() == READY {
             let op = self.op_queue.pop_back().unwrap();
             let val = op.value(self, &ret);
-            self.exp_queue.push_back(Expression::VALUE_WRAPPER(Box::from(val)));
+            self.exp_queue
+                .push_back(Expression::VALUE_WRAPPER(Box::from(val)));
         }
     }
 
     fn op_status(&self) -> OperationStatus {
         if let Some(op) = self.op_queue.back() {
-            if op.seen_values == op.needed_to_see_values { READY } else { WAITING }
-        } else { NOOP }
+            if op.seen_values == op.needed_to_see_values {
+                READY
+            } else {
+                WAITING
+            }
+        } else {
+            NOOP
+        }
     }
 
     fn replace_string_placeholders(&mut self, str: &String) -> String {
@@ -84,7 +93,9 @@ impl<'a> Evaluator<'a> {
         let mut varname = String::new();
         for ch in str.chars() {
             match ch {
-                '{' => { varname = "_".to_string(); }
+                '{' => {
+                    varname = "_".to_string();
+                }
                 '}' => {
                     varname.remove(0);
                     let val = self.read_var(&varname);
@@ -92,7 +103,11 @@ impl<'a> Evaluator<'a> {
                     varname.clear();
                 }
                 _ => {
-                    if varname.len() > 0 { varname.push(ch); } else { result.push(ch); }
+                    if varname.len() > 0 {
+                        varname.push(ch);
+                    } else {
+                        result.push(ch);
+                    }
                 }
             }
         }
@@ -105,7 +120,11 @@ impl<'a> Evaluator<'a> {
         let start_new_line = self.env.last_print_line != *line;
         self.env.last_print_line = *line;
         let to_print = format!("[{}:{}]", self.env.curr_scope().entry_point, line);
-        if start_new_line { print!("\n{}", to_print); } else { print!(" {} ", to_print); }
+        if start_new_line {
+            print!("\n{}", to_print);
+        } else {
+            print!(" {} ", to_print);
+        }
         STRINGVAL(to_print)
     }
 
@@ -126,34 +145,56 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(PRINT_OP(tag)));
                     NOTAVAL
                 }
-                Expression::VAR_RAW(_, varname) => { self.env.read(&varname, self.scribe).clone() }
-                Expression::ARGS(_) => { self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION) }
-                Expression::APPLICABLE_EXPR { params: arg, body } => {
-                    LAMBDAVAL { params: arg.clone(), body: body.clone() }
-                }
-                Expression::NOTANEXPR => { self.error(ErrorType::EVAL_INVALID_EXPR) }
+                Expression::VAR_RAW(_, varname) => self.env.read(&varname, self.scribe).clone(),
+                Expression::ARGS(_) => self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION),
+                Expression::APPLICABLE_EXPR { params: arg, body } => LAMBDAVAL {
+                    params: arg.clone(),
+                    body: body.clone(),
+                },
+                Expression::NOTANEXPR => self.error(ErrorType::EVAL_INVALID_EXPR),
                 Expression::VALUE_WRAPPER(val) => val.deref().clone(),
                 Expression::OPTION_EXPR(ex) => {
-                    if ex.type_equals(&Expression::UNDERSCORE_EXPR(Default::default())) { OPTIONVAL(None) } else {
+                    if ex.type_equals(&Expression::UNDERSCORE_EXPR(Default::default())) {
+                        OPTIONVAL(None)
+                    } else {
                         aux_exp_queue.push_front(*ex);
                         aux_op_queue.push_front(Operation::from_type(OPTIONAL_OP));
                         NOTAVAL
                     }
                 }
-                Expression::SET_DECLARATION_EXPR { input_type, items, is_lazy } => {
-                    lib::desugar_association_declaration(AssociationState::SET, input_type, items, is_lazy,
-                                                         self, &mut aux_exp_queue, &mut aux_op_queue)
-                }
-                Expression::LIST_DECLARATION_EXPR { input_type, items, is_lazy } => {
-                    lib::desugar_association_declaration(AssociationState::LIST, input_type, items, is_lazy,
-                                                         self, &mut aux_exp_queue, &mut aux_op_queue)
-                }
+                Expression::SET_DECLARATION_EXPR {
+                    input_type,
+                    items,
+                    is_lazy,
+                } => lib::desugar_association_declaration(
+                    AssociationState::SET,
+                    input_type,
+                    items,
+                    is_lazy,
+                    self,
+                    &mut aux_exp_queue,
+                    &mut aux_op_queue,
+                ),
+                Expression::LIST_DECLARATION_EXPR {
+                    input_type,
+                    items,
+                    is_lazy,
+                } => lib::desugar_association_declaration(
+                    AssociationState::LIST,
+                    input_type,
+                    items,
+                    is_lazy,
+                    self,
+                    &mut aux_exp_queue,
+                    &mut aux_op_queue,
+                ),
                 Expression::PUSH_EXPR { obj, args } => {
                     if let Expression::VAR_RAW(_, varname) = obj.deref() {
                         // when obj being pushed into is a var, push needs to be first desugared from
                         // "var << |k,v|" to "var=var << |k,v|"
-                        let obj = Box::new(Expression::VALUE_WRAPPER(
-                            Box::new(self.read_var(varname).clone())));
+                        let obj = Box::new(Expression::VALUE_WRAPPER(Box::new(
+                            self.read_var(varname).clone(),
+                        )));
                         self.exp_queue.push_back(Expression::VAR_ASSIGN {
                             varname: varname.clone(),
                             op: Token::new(ASSIGN, obj.coord().row, obj.coord().column),
@@ -165,28 +206,44 @@ impl<'a> Evaluator<'a> {
                         NOTAVAL
                     } else {
                         if let Expression::ARGS(exprs) = args.deref() {
-                            if exprs.len() != 2 { return self.error(EVAL_INVALID_PUSH); }
+                            if exprs.len() != 2 {
+                                return self.error(EVAL_INVALID_PUSH);
+                            }
                             aux_exp_queue.push_front(*obj);
-                            for ex in exprs { aux_exp_queue.push_front(*ex.to_owned()); }
+                            for ex in exprs {
+                                aux_exp_queue.push_front(*ex.to_owned());
+                            }
                             aux_op_queue.push_front(Operation::from_type(ASSOC_PUSHER_OP));
                             NOTAVAL
-                        } else { return self.error(EVAL_INVALID_PUSH); }
+                        } else {
+                            return self.error(EVAL_INVALID_PUSH);
+                        }
                     }
                 }
-                Expression::APPLIED_EXPR { it_arg, op, body, contour_args } => {
+                Expression::APPLIED_EXPR {
+                    it_arg,
+                    op,
+                    mut body,
+                    contour_args,
+                } => {
                     self.create_scope_lazily();
                     let mut total_args_size = 1;
                     if let Some(args) = contour_args {
                         total_args_size += args.len();
-                        for a in args { aux_exp_queue.push_front(*a.to_owned()); }
+                        for a in args {
+                            aux_exp_queue.push_front(*a.to_owned());
+                        }
                     }
                     aux_exp_queue.push_front(*it_arg);
-                    aux_exp_queue.push_front(body.into_applicable());
 
-                    aux_op_queue.push_front(Operation::from_type(BIND_APPLICATION_ARGS_TO_PARAMS_OP(total_args_size, op.clone())));
+                    aux_op_queue.push_front(Operation::from_type(
+                        BIND_APPLICATION_ARGS_TO_PARAMS_OP(total_args_size, op.clone()),
+                    ));
                     if op.type_equals(&AT) {
+                        body = Box::from(body.into_applicable());
                         aux_op_queue.push_front(Operation::from_type(AT_APPLICABLE_RESOLVER_OP));
                     }
+                    aux_exp_queue.push_front(*body);
                     aux_op_queue.push_front(Operation::from_type(SCOPE_CLOSURE_OP(1)));
                     NOTAVAL
                 }
@@ -197,9 +254,14 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
                 Expression::ASSOCIATION_EXPR(pairs, is_lazy) => {
-                    if pairs.is_empty() { ASSOCIATIONVAL(ValueMap::new()) } else {
-                        aux_op_queue.push_front(Operation::from_type(
-                            ASSOC_GROWER_SETUPPER_OP(ValueMap::new(), pairs.len(), is_lazy)));
+                    if pairs.is_empty() {
+                        ASSOCIATIONVAL(ValueMap::new())
+                    } else {
+                        aux_op_queue.push_front(Operation::from_type(ASSOC_GROWER_SETUPPER_OP(
+                            ValueMap::new(),
+                            pairs.len(),
+                            is_lazy,
+                        )));
                         for (k, v) in pairs {
                             aux_exp_queue.push_front(*k.clone());
                             aux_exp_queue.push_front(*v.clone());
@@ -213,7 +275,9 @@ impl<'a> Evaluator<'a> {
                     NOTAVAL
                 }
                 Expression::BLOCK(exprs) => {
-                    for ex in &exprs { aux_exp_queue.push_front(*ex.clone()); }
+                    for ex in &exprs {
+                        aux_exp_queue.push_front(*ex.clone());
+                    }
                     self.create_scope_lazily();
                     aux_op_queue.push_front(Operation::from_type(SCOPE_CLOSURE_OP(exprs.len())));
                     NOTAVAL
@@ -222,26 +286,28 @@ impl<'a> Evaluator<'a> {
                     aux_exp_queue.push_front(*expr);
                     NOTAVAL
                 }
-                Expression::VAR_ASSIGN { varname, op, varval } => {
+                Expression::VAR_ASSIGN {
+                    varname,
+                    op,
+                    varval,
+                } => {
                     aux_exp_queue.push_front(*varval);
                     aux_op_queue.push_front(Operation::from_type(VARASSIGN_OP(varname, op)));
                     NOTAVAL
                 }
                 Expression::UNDERSCORE_EXPR(_) => UNDERSCOREVAL,
-                Expression::LITERAL(value) => {
-                    match &value.ttype {
-                        EOLPRINT => { self.print_debug_brick(&value) }
-                        FALSE => BOOLEANVAL(false),
-                        TRUE => BOOLEANVAL(true),
-                        STRING(str) => STRINGVAL(self.replace_string_placeholders(str)),
-                        INTEGER(int) => INTEGERVAL(*int),
-                        FLOAT(flt) => FLOATVAL(*flt),
-                        IT => { self.read_var(&"it".to_string()) }
-                        TI => { self.read_var(&"ti".to_string()) }
-                        IDX => { self.read_var(&"idx".to_string()) }
-                        _ => { self.error(ErrorType::EVAL_INVALID_LITERAL) }
-                    }
-                }
+                Expression::LITERAL(value) => match &value.ttype {
+                    EOLPRINT => self.print_debug_brick(&value),
+                    FALSE => BOOLEANVAL(false),
+                    TRUE => BOOLEANVAL(true),
+                    STRING(str) => STRINGVAL(self.replace_string_placeholders(str)),
+                    INTEGER(int) => INTEGERVAL(*int),
+                    FLOAT(flt) => FLOATVAL(*flt),
+                    IT => self.read_var(&"it".to_string()),
+                    TI => self.read_var(&"ti".to_string()),
+                    IDX => self.read_var(&"idx".to_string()),
+                    _ => self.error(ErrorType::EVAL_INVALID_LITERAL),
+                },
                 Expression::UNARY { op, expr } => {
                     aux_exp_queue.push_front(*expr);
                     aux_op_queue.push_front(Operation::from_type(UNARY_OP(op)));
@@ -261,19 +327,27 @@ impl<'a> Evaluator<'a> {
                 }
             };
 
-            for op in &mut aux_op_queue { op.update_coord(&self.env.coord); }
+            for op in &mut aux_op_queue {
+                op.update_coord(&self.env.coord);
+            }
             // append also clears the aux queues for the next iteration.
             self.exp_queue.append(&mut aux_exp_queue);
 
             self.op_queue.append(&mut aux_op_queue);
 
-            if ret.type_equals(&NOTAVAL) { continue; }
-            if self.op_status() != WAITING { continue; }
+            if ret.type_equals(&NOTAVAL) {
+                continue;
+            }
+            if self.op_status() != WAITING {
+                continue;
+            }
             if ret.type_equals(&ERRVAL) {
-                error!("\nlast val: {:?}\nlast op: {:?}\nlast exp: {:?}\n",
+                error!(
+                    "\nlast val: {:?}\nlast op: {:?}\nlast exp: {:?}\n",
                     &self.val_queue.back(),
                     &self.op_queue.back(),
-                    &self.exp_queue.back());
+                    &self.exp_queue.back()
+                );
                 self.scribe.enact_termination_policy();
             }
 
@@ -293,6 +367,10 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        if can_recycle_current_scope_instead { self.op_queue.pop_back(); } else { self.env.create_scope(); }
+        if can_recycle_current_scope_instead {
+            self.op_queue.pop_back();
+        } else {
+            self.env.create_scope();
+        }
     }
 }

@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::vec;
 
-use crate::{Cursor, WalksCollection};
 use crate::boilerplate::ZERO_COORD;
 use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::Evaluator;
-use crate::lexer::{Coord, Token, TokenType};
 use crate::lexer::TokenType::*;
+use crate::lexer::{Coord, Token, TokenType};
 use crate::parser::Expression::*;
+use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -16,14 +16,32 @@ mod tests;
 #[allow(non_camel_case_types)]
 pub enum Expression {
     LITERAL(Token),
-    UNARY { op: Token, expr: Box<Expression> },
-    BINARY { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
-    LOGIC { lhs: Box<Expression>, op: Token, rhs: Box<Expression> },
+    UNARY {
+        op: Token,
+        expr: Box<Expression>,
+    },
+    BINARY {
+        lhs: Box<Expression>,
+        op: Token,
+        rhs: Box<Expression>,
+    },
+    LOGIC {
+        lhs: Box<Expression>,
+        op: Token,
+        rhs: Box<Expression>,
+    },
     GROUPING(Box<Expression>),
-    VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
+    VAR_ASSIGN {
+        varname: String,
+        op: Token,
+        varval: Box<Expression>,
+    },
     VAR_RAW(Coord, String),
     BLOCK(Vec<Box<Expression>>),
-    APPLICABLE_EXPR { params: Box<Expression>, body: Box<Expression> },
+    APPLICABLE_EXPR {
+        params: Box<Expression>,
+        body: Box<Expression>,
+    },
     APPLIED_EXPR {
         it_arg: Box<Expression>,
         op: Token,
@@ -32,10 +50,25 @@ pub enum Expression {
     },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>, bool),
-    LIST_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>>, is_lazy: bool },
-    SET_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>>, is_lazy: bool },
-    PULL_EXPR { source: Box<Expression>, op: Token, key: Box<Expression> },
-    PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
+    LIST_DECLARATION_EXPR {
+        input_type: InputType,
+        items: Vec<Box<Expression>>,
+        is_lazy: bool,
+    },
+    SET_DECLARATION_EXPR {
+        input_type: InputType,
+        items: Vec<Box<Expression>>,
+        is_lazy: bool,
+    },
+    PULL_EXPR {
+        source: Box<Expression>,
+        op: Token,
+        key: Box<Expression>,
+    },
+    PUSH_EXPR {
+        obj: Box<Expression>,
+        args: Box<Expression>,
+    },
     ARGS(Vec<Box<Expression>>),
     OPTION_EXPR(Box<Expression>),
     UNDERSCORE_EXPR(Coord),
@@ -50,15 +83,17 @@ pub enum Expression {
 impl Expression {
     pub fn into_applicable(self) -> Expression {
         match &self {
-            VAR_RAW(_, _) | APPLICABLE_EXPR {..} => self,
-            _=> {APPLICABLE_EXPR { params: Box::new(ARGS(vec![])), body: Box::new(self) }}
+            VAR_RAW(_, _) | APPLICABLE_EXPR { .. } => self,
+            _ => APPLICABLE_EXPR {
+                params: Box::new(ARGS(vec![])),
+                body: Box::new(self),
+            },
         }
     }
 
     pub fn ok_or_var_with_applicable(&self, eval: &mut Evaluator) -> Box<Expression> {
         if let VAR_RAW(_, varname) = &self {
-            if let Value::LAMBDAVAL { params, body }
-                = eval.read_var(varname) {
+            if let Value::LAMBDAVAL { params, body } = eval.read_var(varname) {
                 return Box::from(APPLICABLE_EXPR { params, body });
             }
         }
@@ -68,32 +103,30 @@ impl Expression {
         match self {
             LITERAL(tok) => &tok.coord,
 
-            APPLIED_EXPR { op, .. } |
-            PULL_EXPR { op, .. } |
-            VAR_ASSIGN { op, .. } |
-            BINARY { op, .. } |
-            LOGIC { op, .. } |
-            UNARY { op, .. } => &op.coord,
+            APPLIED_EXPR { op, .. }
+            | PULL_EXPR { op, .. }
+            | VAR_ASSIGN { op, .. }
+            | BINARY { op, .. }
+            | LOGIC { op, .. }
+            | UNARY { op, .. } => &op.coord,
 
-            UNDERSCORE_EXPR(coord) |
-            VAR_RAW(coord, _) => &coord,
+            UNDERSCORE_EXPR(coord) | VAR_RAW(coord, _) => &coord,
 
-            ARGS(exprs) |
-            BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&ZERO_COORD),
+            ARGS(exprs) | BLOCK(exprs) => exprs.first().map(|ex| ex.coord()).unwrap_or(&ZERO_COORD),
 
-            PRINT_EXPR(expr, _) |
-            APPLICABLE_EXPR { params: expr, .. } |
-            PUSH_EXPR { obj: expr, .. } |
-            GROUPING(expr) |
-            OPTION_EXPR(expr) |
-            RETURN_EXPR(expr) => expr.coord(),
+            PRINT_EXPR(expr, _)
+            | APPLICABLE_EXPR { params: expr, .. }
+            | PUSH_EXPR { obj: expr, .. }
+            | GROUPING(expr)
+            | OPTION_EXPR(expr)
+            | RETURN_EXPR(expr) => expr.coord(),
 
             ASSOCIATION_EXPR(v, _) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&ZERO_COORD),
 
-            LIST_DECLARATION_EXPR { .. } |
-            SET_DECLARATION_EXPR { .. } |
-            VALUE_WRAPPER(_) |
-            NOTANEXPR => &ZERO_COORD,
+            LIST_DECLARATION_EXPR { .. }
+            | SET_DECLARATION_EXPR { .. }
+            | VALUE_WRAPPER(_)
+            | NOTANEXPR => &ZERO_COORD,
         }
     }
 
@@ -101,7 +134,7 @@ impl Expression {
         match self {
             RETURN_EXPR(e) => e.last_instruction(),
             BLOCK(exprs) => exprs.last().map(|e| e.last_instruction()).unwrap_or(self),
-            _ => self
+            _ => self,
         }
     }
 
@@ -114,29 +147,25 @@ impl Expression {
 
     pub fn type_equals(&self, other: &Self) -> bool {
         match (self, other) {
-            (RETURN_EXPR(expr), other) => {
-                expr.type_equals(other)
-            }
-            (BLOCK(exprs), _) => {
-                match exprs.last() {
-                    None => { false }
-                    Some(e) => { e.type_equals(other) }
-                }
-            }
-            (LITERAL(_), LITERAL(_)) |
-            (UNARY { .. }, UNARY { .. }) |
-            (BINARY { .. }, BINARY { .. }) |
-            (LOGIC { .. }, LOGIC { .. }) |
-            (GROUPING(_), GROUPING(_)) |
-            (VAR_ASSIGN { .. }, VAR_ASSIGN { .. }) |
-            (VAR_RAW(_, _), VAR_RAW(_, _)) |
-            (APPLIED_EXPR { .. }, APPLIED_EXPR { .. }) |
-            (ASSOCIATION_EXPR(_, _), ASSOCIATION_EXPR(_, _)) |
-            (PULL_EXPR { .. }, PULL_EXPR { .. }) |
-            (PUSH_EXPR { .. }, PUSH_EXPR { .. }) |
-            (UNDERSCORE_EXPR(..), UNDERSCORE_EXPR(..)) |
-            (NOTANEXPR, NOTANEXPR) => true,
-            (_, _) => false
+            (RETURN_EXPR(expr), other) => expr.type_equals(other),
+            (BLOCK(exprs), _) => match exprs.last() {
+                None => false,
+                Some(e) => e.type_equals(other),
+            },
+            (LITERAL(_), LITERAL(_))
+            | (UNARY { .. }, UNARY { .. })
+            | (BINARY { .. }, BINARY { .. })
+            | (LOGIC { .. }, LOGIC { .. })
+            | (GROUPING(_), GROUPING(_))
+            | (VAR_ASSIGN { .. }, VAR_ASSIGN { .. })
+            | (VAR_RAW(_, _), VAR_RAW(_, _))
+            | (APPLIED_EXPR { .. }, APPLIED_EXPR { .. })
+            | (ASSOCIATION_EXPR(_, _), ASSOCIATION_EXPR(_, _))
+            | (PULL_EXPR { .. }, PULL_EXPR { .. })
+            | (PUSH_EXPR { .. }, PUSH_EXPR { .. })
+            | (UNDERSCORE_EXPR(..), UNDERSCORE_EXPR(..))
+            | (NOTANEXPR, NOTANEXPR) => true,
+            (_, _) => false,
         }
     }
 }
@@ -155,7 +184,17 @@ pub enum InputType {
 
 const PULL_TOKENS: [TokenType; 2] = [PULL, PULLEXTRACT];
 const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
-const ASSIGN_TOKENS: [TokenType; 9] = [ASSIGN, MINASSIGN, MAXASSIGN, PLUSASSIGN, MINUSASSIGN, MULASSIGN, DIVASSIGN, MODULOASSIGN, POWASSIGN];
+const ASSIGN_TOKENS: [TokenType; 9] = [
+    ASSIGN,
+    MINASSIGN,
+    MAXASSIGN,
+    PLUSASSIGN,
+    MINUSASSIGN,
+    MULASSIGN,
+    DIVASSIGN,
+    MODULOASSIGN,
+    POWASSIGN,
+];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
 const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
@@ -173,13 +212,22 @@ pub struct Parser<'a> {
 }
 
 impl Parser<'_> {
-    pub fn into_expressions(self) -> VecDeque<Expression> { self.exprs }
+    pub fn into_expressions(self) -> VecDeque<Expression> {
+        self.exprs
+    }
     pub fn from_tokens(tokens: Vec<Token>, scribe: &mut ErrorScribe) -> Parser {
-        Parser { tokens, cursor: Cursor::new(), scribe, exprs: VecDeque::new() }
+        Parser {
+            tokens,
+            cursor: Cursor::new(),
+            scribe,
+            exprs: VecDeque::new(),
+        }
     }
 
     pub fn parse(&mut self) {
-        if self.tokens.is_empty() { return; }
+        if self.tokens.is_empty() {
+            return;
+        }
         dbg!(&self.tokens);
         while self.can_consume() {
             let expr = self.build_expression();
@@ -188,7 +236,9 @@ impl Parser<'_> {
     }
 
     ///cursor will be after the built expression.
-    fn build_expression(&mut self) -> Expression { self.applicable() }
+    fn build_expression(&mut self) -> Expression {
+        self.applicable()
+    }
 
     fn applicable(&mut self) -> Expression {
         // if args expr has bubbled up without being captured by anything else, it means that it's defining an applicable expr.
@@ -198,7 +248,9 @@ impl Parser<'_> {
                 params: Box::new(expr),
                 body: Box::new(self.build_expression()),
             }
-        } else { expr }
+        } else {
+            expr
+        }
     }
 
     fn pull(&mut self) -> Expression {
@@ -221,8 +273,11 @@ impl Parser<'_> {
             self.cursor.step_fwd();
             self.assert_curr_is(BAR);
             self.cursor.step_fwd();
-            let exprs = if let Some(acc) =
-                self.accumulate(BAR) { acc } else { return NOTANEXPR; };
+            let exprs = if let Some(acc) = self.accumulate(BAR) {
+                acc
+            } else {
+                return NOTANEXPR;
+            };
             self.cursor.step_fwd();
             expr = PUSH_EXPR {
                 obj: Box::new(expr),
@@ -259,7 +314,6 @@ impl Parser<'_> {
         }
         expr
     }
-
 
     fn comparison(&mut self) -> Expression {
         let mut expr = self.term();
@@ -316,16 +370,21 @@ impl Parser<'_> {
         expr
     }
 
-
     fn unary(&mut self) -> Expression {
         if self.curr_in(&UNARY_TOKENS) {
             self.cursor.step_fwd();
-            return UNARY { op: self.read_prev().clone(), expr: Box::new(self.unary()) };
+            return UNARY {
+                op: self.read_prev().clone(),
+                expr: Box::new(self.unary()),
+            };
         }
         let mut expr = self.print();
         while self.curr_in(&POSTFIX_UNARY_TOKENS) {
             self.cursor.step_fwd();
-            expr = UNARY { op: self.read_prev().clone(), expr: Box::new(expr) }
+            expr = UNARY {
+                op: self.read_prev().clone(),
+                expr: Box::new(expr),
+            }
         }
         expr
     }
@@ -336,12 +395,17 @@ impl Parser<'_> {
             // tagged print: $<a>3  // prints a: 3
             return if self.curr_is_seq(&[LT, IDENTIFIER(String::new()), GT]) {
                 self.cursor.step_fwd();
-                let tag = if let IDENTIFIER(tag) = &self.read_curr().ttype
-                { tag.to_owned() } else { return NOTANEXPR; };
+                let tag = if let IDENTIFIER(tag) = &self.read_curr().ttype {
+                    tag.to_owned()
+                } else {
+                    return NOTANEXPR;
+                };
                 self.cursor.mov(2);
                 PRINT_EXPR(Box::new(self.application()), Some(tag))
                 // normal print
-            } else { PRINT_EXPR(Box::new(self.application()), None) };
+            } else {
+                PRINT_EXPR(Box::new(self.application()), None)
+            };
         }
         self.application()
     }
@@ -368,12 +432,16 @@ impl Parser<'_> {
         expr
     }
 
-
     fn primary(&mut self) -> Expression {
         if !self.can_consume() {
             self.scribe.annotate_error(Error::on_coord(
-                if self.cursor.get() == 0 { &self.read_curr().coord } else { &self.read_prev().coord },
-                ErrorType::PARSER_EXPECTED_LITERAL(EOF)));
+                if self.cursor.get() == 0 {
+                    &self.read_curr().coord
+                } else {
+                    &self.read_prev().coord
+                },
+                ErrorType::PARSER_EXPECTED_LITERAL(EOF),
+            ));
             return NOTANEXPR;
         }
         // check for composite tokens first
@@ -390,27 +458,26 @@ impl Parser<'_> {
 
         let tok = &self.tokens.get(self.cursor.get()).unwrap().clone();
         return match &tok.ttype {
-            LIST => {
-                self.build_association_declaration(AssociationState::LIST, true)
-            }
-            SET => {
-                self.build_association_declaration(AssociationState::SET, true)
-            }
+            LIST => self.build_association_declaration(AssociationState::LIST, true),
+            SET => self.build_association_declaration(AssociationState::SET, true),
             QUESTIONMARK => {
                 self.cursor.step_fwd();
                 OPTION_EXPR(Box::new(self.primary()))
             }
-            LBRACKET => { self.process_association(true) }
-            IDENTIFIER(str) => { self.process_assignment(&str) }
-            LBRACE => { self.process_code_block() }
+            LBRACKET => self.process_association(true),
+            IDENTIFIER(str) => self.process_assignment(&str),
+            LBRACE => self.process_code_block(),
             RETURN => {
                 self.cursor.step_fwd();
                 RETURN_EXPR(Box::new(self.build_expression()))
             }
             BAR => {
                 self.cursor.step_fwd();
-                let exprs = if let Some(acc) =
-                    self.accumulate(BAR) { acc } else { return NOTANEXPR; };
+                let exprs = if let Some(acc) = self.accumulate(BAR) {
+                    acc
+                } else {
+                    return NOTANEXPR;
+                };
                 self.cursor.step_fwd();
                 ARGS(exprs)
             }
@@ -425,14 +492,18 @@ impl Parser<'_> {
             LPAREN => {
                 self.cursor.step_fwd();
                 let expr = self.build_expression();
-                if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+                if expr.type_equals(&NOTANEXPR) {
+                    return NOTANEXPR;
+                }
                 self.assert_curr_is(RPAREN);
                 self.cursor.step_fwd();
                 GROUPING(Box::new(expr))
             }
             _ => {
                 self.scribe.annotate_error(Error::on_coord(
-                    &tok.coord, ErrorType::PARSER_UNEXPECTED_TOKEN(tok.ttype.clone())));
+                    &tok.coord,
+                    ErrorType::PARSER_UNEXPECTED_TOKEN(tok.ttype.clone()),
+                ));
                 self.cursor.step_fwd();
                 NOTANEXPR
             }
@@ -456,7 +527,10 @@ impl Parser<'_> {
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
-        ASSOCIATION_EXPR(keys.iter().map(|k| k.to_owned()).zip(vals).collect(), is_lazy)
+        ASSOCIATION_EXPR(
+            keys.iter().map(|k| k.to_owned()).zip(vals).collect(),
+            is_lazy,
+        )
     }
 
     fn process_code_block(&mut self) -> Expression {
@@ -465,7 +539,9 @@ impl Parser<'_> {
         let mut exprs = vec![];
         while self.can_consume() && !self.curr_in(&[RBRACE]) {
             let expr = self.build_expression();
-            if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+            if expr.type_equals(&NOTANEXPR) {
+                return NOTANEXPR;
+            }
             exprs.push(Box::new(expr));
         }
         self.assert_curr_is(RBRACE);
@@ -483,43 +559,50 @@ impl Parser<'_> {
                     op: self.read_prev().clone(),
                     varval: Box::new(self.build_expression()),
                 }
-            } else { unreachable!() };
+            } else {
+                unreachable!()
+            };
         }
         VAR_RAW(self.read_prev().coord.clone(), str.clone())
     }
 
-
     fn assert_curr_is(&mut self, ttype: TokenType) -> bool {
         if !self.can_consume() || !self.read_curr().type_equals(&ttype) {
             self.scribe.annotate_error(Error::on_coord(
-                self.try_read_curr().map(|tok| &tok.coord).unwrap_or(
-                    &self.read_prev().coord
-                ),
-                ErrorType::PARSER_EXPECTED_TOKEN(ttype)));
+                self.try_read_curr()
+                    .map(|tok| &tok.coord)
+                    .unwrap_or(&self.read_prev().coord),
+                ErrorType::PARSER_EXPECTED_TOKEN(ttype),
+            ));
             return false;
         }
         true
     }
 
     fn curr_is_seq(&self, ttypes: &[TokenType]) -> bool {
-        if self.tokens.is_empty() || ttypes.is_empty() { return false; }
-        if !self.can_peek(ttypes.len()) { return false; }
-        ttypes.iter()
+        if self.tokens.is_empty() || ttypes.is_empty() {
+            return false;
+        }
+        if !self.can_peek(ttypes.len()) {
+            return false;
+        }
+        ttypes
+            .iter()
             .zip(0..)
             .all(|(tt, i)| self.peek(i).type_equals(tt))
     }
 
     fn curr_in(&self, ttypes: &[TokenType]) -> bool {
-        self.can_consume() && ttypes.iter().any(
-            |tt| self.read_curr().type_equals(tt)
-        )
+        self.can_consume() && ttypes.iter().any(|tt| self.read_curr().type_equals(tt))
     }
 
     fn accumulate(&mut self, stop_ttype: TokenType) -> Option<Vec<Box<Expression>>> {
         let mut items = vec![];
         while !self.curr_in(&[stop_ttype.clone()]) {
             let expr = self.build_expression();
-            if expr.type_equals(&NOTANEXPR) { return None; }
+            if expr.type_equals(&NOTANEXPR) {
+                return None;
+            }
             items.push(Box::new(expr));
             if self.curr_in(&[COMMA]) {
                 self.cursor.step_fwd();
@@ -527,28 +610,50 @@ impl Parser<'_> {
         }
         Some(items)
     }
-    fn build_association_declaration(&mut self, state: AssociationState, is_lazy: bool) -> Expression {
+    fn build_association_declaration(
+        &mut self,
+        state: AssociationState,
+        is_lazy: bool,
+    ) -> Expression {
         self.cursor.step_fwd();
         let mut input_state = InputType::ITEMS;
         let expr = self.build_expression();
-        if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+        if expr.type_equals(&NOTANEXPR) {
+            return NOTANEXPR;
+        }
         let mut items = vec![Box::new(expr)];
         if self.curr_in(&[RANGE]) {
             input_state = InputType::RANGE;
             self.cursor.step_fwd();
             let expr = self.build_expression();
-            if expr.type_equals(&NOTANEXPR) { return NOTANEXPR; }
+            if expr.type_equals(&NOTANEXPR) {
+                return NOTANEXPR;
+            }
             items.push(Box::new(expr));
         } else {
-            if self.curr_in(&[COMMA]) { self.cursor.step_fwd(); }
+            if self.curr_in(&[COMMA]) {
+                self.cursor.step_fwd();
+            }
             if let Some(mut acc) = self.accumulate(RBRACKET) {
                 items.append(&mut acc);
-            } else { return NOTANEXPR; }
+            } else {
+                return NOTANEXPR;
+            }
         }
         self.assert_curr_is(RBRACKET);
         self.cursor.step_fwd();
         if state == AssociationState::LIST {
-            LIST_DECLARATION_EXPR { input_type: input_state, items, is_lazy }
-        } else { SET_DECLARATION_EXPR { input_type: input_state, items, is_lazy } }
+            LIST_DECLARATION_EXPR {
+                input_type: input_state,
+                items,
+                is_lazy,
+            }
+        } else {
+            SET_DECLARATION_EXPR {
+                input_type: input_state,
+                items,
+                is_lazy,
+            }
+        }
     }
 }

@@ -11,4 +11,4 @@ rustyline = "13.0.0"
 rand = "0.8.5"
 backtrace-on-stack-overflow = "0.3.0"
 log = "0.4.20"
-env_logger = { version = "0.11.0", features = [] }
+env_logger = { version = "0.11.1", features = [] }

@@ -4,8 +4,8 @@ use value::Value;
 use value::Value::*;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
+use crate::lexer::{Coord, Token};
 
 pub mod value;
 
@@ -34,29 +34,36 @@ impl Environment {
     pub fn destroy_scope(&mut self) {
         assert!(self.scopes.len() > 1);
         // println!("{}destroy {} {}", " ".repeat(self.scopes.len()-1), self.scopes.len() - 1, &self.coord);
-        if self.scopes.len() > 1 { self.scopes.pop(); }
+        if self.scopes.len() > 1 {
+            self.scopes.pop();
+        }
     }
 
-    pub fn curr_scope(&self) -> &Scope { self.scopes.last().unwrap() }
+    pub fn curr_scope(&self) -> &Scope {
+        self.scopes.last().unwrap()
+    }
 
-    pub fn curr_scope_times_recycled(&self) -> usize { self.curr_scope().times_recycled }
-
+    pub fn curr_scope_times_recycled(&self) -> usize {
+        self.curr_scope().times_recycled
+    }
 
     pub fn try_read(&self, varname: &String) -> Option<&Value> {
         for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.variables.get(varname) { return Some(val); }
+            if let Some(val) = scope.variables.get(varname) {
+                return Some(val);
+            }
         }
         None
     }
 
     pub fn read(&self, varname: &String, scribe: &mut ErrorScribe) -> &Value {
         match self.try_read(varname) {
-            Some(value) => {
-                value
-            }
+            Some(value) => value,
             None => {
-                scribe.annotate_error(Error::on_coord(&self.coord,
-                                                      ErrorType::EVAL_UNASSIGNED_VAR(varname.clone())));
+                scribe.annotate_error(Error::on_coord(
+                    &self.coord,
+                    ErrorType::EVAL_UNASSIGNED_VAR(varname.clone()),
+                ));
                 &ERRVAL
             }
         }
@@ -73,7 +80,11 @@ impl Environment {
     }
 
     pub fn write_binding(&mut self, varname: &String, varval: &Value) -> Value {
-        self.write(varname, varval, &Token::new(ASSIGN, self.coord.row, self.coord.column))
+        self.write(
+            varname,
+            varval,
+            &Token::new(ASSIGN, self.coord.row, self.coord.column),
+        )
     }
 }
 
@@ -95,30 +106,32 @@ impl Scope {
         }
     }
 
-    fn read(&self, varname: &String) -> Option<&Value> { self.variables.get(varname) }
+    fn read(&self, varname: &String) -> Option<&Value> {
+        self.variables.get(varname)
+    }
 
     /// NOTE: particular assigns such as =% implicitly default to = if the literal isn't containing a value already.
     /// should this be considered an error?
     fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
         let old_val = &self.read(varname);
         let val_to_write = match old_val {
-            None => { varval.clone() }
-            Some(ov) => {
-                match op.ttype {
-                    ASSIGN => { varval.clone() }
-                    MINASSIGN => { varval.min_them(ov) }
-                    MAXASSIGN => { varval.max_them(ov) }
-                    PLUSASSIGN => { varval.plus_them(ov) }
-                    MINUSASSIGN => { ov.minus_them(&varval) }
-                    MULASSIGN => { varval.mul_them(ov) }
-                    DIVASSIGN => { ov.div_them(&varval) }
-                    POWASSIGN => { ov.pow_them(&varval) }
-                    MODULOASSIGN => { ov.modulo_them(&varval) }
-                    _ => { ERRVAL }
-                }
-            }
+            None => varval.clone(),
+            Some(ov) => match op.ttype {
+                ASSIGN => varval.clone(),
+                MINASSIGN => varval.min_them(ov),
+                MAXASSIGN => varval.max_them(ov),
+                PLUSASSIGN => varval.plus_them(ov),
+                MINUSASSIGN => ov.minus_them(&varval),
+                MULASSIGN => varval.mul_them(ov),
+                DIVASSIGN => ov.div_them(&varval),
+                POWASSIGN => ov.pow_them(&varval),
+                MODULOASSIGN => ov.modulo_them(&varval),
+                _ => ERRVAL,
+            },
         };
-        if val_to_write.type_equals(&ERRVAL) { return ERRVAL; }
+        if val_to_write.type_equals(&ERRVAL) {
+            return ERRVAL;
+        }
         self.variables.insert(varname.clone(), val_to_write.clone());
         val_to_write.clone()
     }

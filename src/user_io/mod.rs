@@ -1,16 +1,16 @@
 use std::fs::File;
-use std::io::{Read, stdout, Write};
+use std::io::{stdout, Read, Write};
 use std::path::Path;
 use std::process::exit;
 
-use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 
-use crate::{lexer, parser};
 use crate::environment::Environment;
 use crate::errors::ErrorScribe;
 use crate::errors::TerminationPolicy::{PERMISSIVE, STRICT};
 use crate::evaluator::Evaluator;
+use crate::{lexer, parser};
 
 pub fn interpret_file(filename: &str, verbose: bool) {
     let path = Path::new(filename);
@@ -27,7 +27,9 @@ pub fn interpret_file(filename: &str, verbose: bool) {
                 dbg!(&buf);
                 file = File::open(buf).expect("No such file.");
             }
-            _ => { panic!("No such file.") }
+            _ => {
+                panic!("No such file.")
+            }
         }
     }
     let mut content = String::new();
@@ -62,19 +64,21 @@ pub fn serve_repl() {
                         println!("debug mode {}", if verbose { "ON" } else { "OFF" });
                         continue;
                     }
-                    "q" => { exit(0); }
-                    _ => { interpret_instructions(&mut es, line, &mut env, verbose); }
-                }
-            }
-            Err(err) => {
-                match err {
-                    ReadlineError::Interrupted | ReadlineError::Eof => { exit(0) }
+                    "q" => {
+                        exit(0);
+                    }
                     _ => {
-                        println!("REPL ERROR");
-                        continue;
+                        interpret_instructions(&mut es, line, &mut env, verbose);
                     }
                 }
             }
+            Err(err) => match err {
+                ReadlineError::Interrupted | ReadlineError::Eof => exit(0),
+                _ => {
+                    println!("REPL ERROR");
+                    continue;
+                }
+            },
         }
     }
 }
@@ -87,17 +91,20 @@ pub fn interpret_instructions(
 ) -> bool {
     let mut lexer = lexer::Lexer::from_string(instructions, scribe);
     let tokens = lexer.produce_tokens();
-    if tokens.is_empty() { return false; }
+    if tokens.is_empty() {
+        return false;
+    }
     if verbose {
         println!("produced following tokens: ");
         tokens.iter().for_each(|tok| println!("{tok}"));
     }
 
-
     let mut parser = parser::Parser::from_tokens(tokens.to_owned(), scribe);
     parser.parse();
     let mut exprs = parser.into_expressions();
-    if exprs.is_empty() { return false; }
+    if exprs.is_empty() {
+        return false;
+    }
     if scribe.has_errors() {
         dbg!("parsing finished with errors.");
         dbg!(&scribe);
@@ -120,8 +127,12 @@ pub fn interpret_instructions(
     return evaluator.was_evaluation_consistent();
 }
 
-pub trait Red { fn red(&self) -> Self; }
+pub trait Red {
+    fn red(&self) -> Self;
+}
 
 impl Red for String {
-    fn red(&self) -> Self { format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m") }
+    fn red(&self) -> Self {
+        format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m")
+    }
 }

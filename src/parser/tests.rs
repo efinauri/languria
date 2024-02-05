@@ -35,7 +35,8 @@ mod tests {
                 Token::debug(ASSIGN),
                 Token::debug(INTEGER(2)),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&VAR_ASSIGN {
@@ -60,9 +61,10 @@ mod tests {
                 Token::debug(INTEGER(2)),
                 Token::debug(COMMA),
                 Token::debug(INTEGER(2)),
-                Token::debug(BAR)
+                Token::debug(BAR),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&PUSH_EXPR {
@@ -84,7 +86,8 @@ mod tests {
                 Token::debug(PULL),
                 Token::debug(INTEGER(2)),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&PULL_EXPR {
@@ -98,12 +101,9 @@ mod tests {
     fn application() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
-            vec![
-                Token::debug(INTEGER(2)),
-                Token::debug(AT),
-                Token::debug(IT),
-            ],
-            &mut es);
+            vec![Token::debug(INTEGER(2)), Token::debug(AT), Token::debug(IT)],
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&APPLIED_EXPR {
@@ -114,13 +114,10 @@ mod tests {
         }));
     }
 
-
     #[test]
     fn empty_eval() {
         let mut es = ErrorScribe::debug();
-        let mut p = Parser::from_tokens(
-            vec![],
-            &mut es);
+        let mut p = Parser::from_tokens(vec![], &mut es);
         p.parse();
         let exprs = p.into_expressions();
         assert!(exprs.is_empty());
@@ -129,19 +126,14 @@ mod tests {
     #[test]
     fn logic_exprs() {
         let mut es = ErrorScribe::debug();
-        for (op_tok, idx) in vec![
-            Token::debug(AND),
-            Token::debug(OR),
-            Token::debug(XOR),
-        ].iter().zip(0..)
+        for (op_tok, idx) in vec![Token::debug(AND), Token::debug(OR), Token::debug(XOR)]
+            .iter()
+            .zip(0..)
         {
             let mut p = Parser::from_tokens(
-                vec![
-                    Token::debug(TRUE),
-                    op_tok.clone(),
-                    Token::debug(FALSE),
-                ],
-                &mut es);
+                vec![Token::debug(TRUE), op_tok.clone(), Token::debug(FALSE)],
+                &mut es,
+            );
             let expr = p.build_expression();
             dbg!(idx, &expr);
             assert!(expr.type_equals(&LOGIC {
@@ -160,7 +152,9 @@ mod tests {
             Token::debug(GT),
             Token::debug(PLUS),
             Token::debug(DIV),
-        ].iter().zip(0..)
+        ]
+        .iter()
+        .zip(0..)
         {
             let mut p = Parser::from_tokens(
                 vec![
@@ -168,7 +162,8 @@ mod tests {
                     op_tok.clone(),
                     Token::debug(INTEGER(2)),
                 ],
-                &mut es);
+                &mut es,
+            );
             let expr = p.build_expression();
             dbg!(idx, &expr);
             assert!(expr.type_equals(&BINARY {
@@ -182,16 +177,9 @@ mod tests {
     #[test]
     fn unary_exprs() {
         let mut es = ErrorScribe::debug();
-        for (op_tok, idx) in vec![
-            Token::debug(NOT),
-        ].iter().zip(0..)
-        {
-            let mut p = Parser::from_tokens(
-                vec![
-                    op_tok.clone(),
-                    Token::debug(INTEGER(2)),
-                ],
-                &mut es);
+        for (op_tok, idx) in vec![Token::debug(NOT)].iter().zip(0..) {
+            let mut p =
+                Parser::from_tokens(vec![op_tok.clone(), Token::debug(INTEGER(2))], &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
             assert!(expr.type_equals(&UNARY {
@@ -208,14 +196,12 @@ mod tests {
             Token::debug(INTEGER(2)),
             Token::debug(FLOAT(2.2)),
             Token::debug(STRING(String::from("hi"))),
-        ].iter().zip(0..)
+        ]
+        .iter()
+        .zip(0..)
         {
-            let mut p = Parser::from_tokens(
-                vec![
-                    op_tok.clone(),
-                    Token::debug(INTEGER(2)),
-                ],
-                &mut es);
+            let mut p =
+                Parser::from_tokens(vec![op_tok.clone(), Token::debug(INTEGER(2))], &mut es);
             let expr = p.build_expression();
             dbg!(idx, &expr);
             assert!(expr.type_equals(&LITERAL(Token::debug(NOTATOKEN))));
@@ -231,7 +217,8 @@ mod tests {
                 Token::debug(INTEGER(2)),
                 Token::debug(RPAREN),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&GROUPING(Box::new(NOTANEXPR))));
@@ -240,11 +227,7 @@ mod tests {
     #[test]
     fn raw_var() {
         let mut es = ErrorScribe::debug();
-        let mut p = Parser::from_tokens(
-            vec![
-                Token::debug(IDENTIFIER(String::from("x"))),
-            ],
-            &mut es);
+        let mut p = Parser::from_tokens(vec![Token::debug(IDENTIFIER(String::from("x")))], &mut es);
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&VAR_RAW(Default::default(), "".to_string())));
@@ -261,7 +244,8 @@ mod tests {
                 Token::debug(GTE),
                 Token::debug(LTE),
             ],
-            &mut es);
+            &mut es,
+        );
         dbg!(&p.read_curr());
         assert!(p.assert_curr_is(IDENTIFIER(String::from("Y"))));
         assert!(p.curr_in(&[IDENTIFIER(String::from("Y"))]));
@@ -281,11 +265,9 @@ mod tests {
     fn return_expr() {
         let mut es = ErrorScribe::debug();
         let mut p = Parser::from_tokens(
-            vec![
-                Token::debug(RETURN),
-                Token::debug(INTEGER(2)),
-            ],
-            &mut es);
+            vec![Token::debug(RETURN), Token::debug(INTEGER(2))],
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&LITERAL(Token::debug(INTEGER(2)))));
@@ -302,7 +284,8 @@ mod tests {
                 Token::debug(INTEGER(2)),
                 Token::debug(RBRACE),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&LITERAL(Token::debug(INTEGER(2)))));
@@ -327,7 +310,8 @@ mod tests {
                 Token::debug(INTEGER(2)),
                 Token::debug(RBRACKET),
             ],
-            &mut es);
+            &mut es,
+        );
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&ASSOCIATION_EXPR(vec![], true)));

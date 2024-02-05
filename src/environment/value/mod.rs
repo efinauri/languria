@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Neg};
 
+use crate::environment::value::Value::*;
 use crate::environment::Environment;
 use crate::environment::Value::{ERRVAL, NOTAVAL};
-use crate::environment::value::Value::*;
 use crate::parser::Expression;
 use crate::user_io::Red;
 
@@ -16,7 +16,10 @@ pub enum Value {
     FLOATVAL(f64),
     STRINGVAL(String),
     BOOLEANVAL(bool),
-    LAMBDAVAL { params: Box<Expression>, body: Box<Expression> },
+    LAMBDAVAL {
+        params: Box<Expression>,
+        body: Box<Expression>,
+    },
     OPTIONVAL(Option<Box<Self>>),
     ASSOCIATIONVAL(ValueMap),
     RETURNVAL(Box<Self>),
@@ -29,8 +32,8 @@ pub enum Value {
 impl Value {
     pub fn unwrap_option(&self) -> Value {
         match self {
-            OPTIONVAL(Some(val)) => { val.deref().clone() }
-            _ => { ERRVAL }
+            OPTIONVAL(Some(val)) => val.deref().clone(),
+            _ => ERRVAL,
         }
     }
 }
@@ -42,9 +45,15 @@ pub struct ValueMap {
 }
 
 impl ValueMap {
-    pub fn len(&self) -> usize { self.map.len() }
-    pub fn ith_key(&self, i: &usize) -> Value { self.map.keys().nth(*i).unwrap().deref().clone() }
-    pub fn ith_val(&self, i: &usize) -> Value { self.map.values().nth(*i).unwrap().deref().clone() }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+    pub fn ith_key(&self, i: &usize) -> Value {
+        self.map.keys().nth(*i).unwrap().deref().clone()
+    }
+    pub fn ith_val(&self, i: &usize) -> Value {
+        self.map.values().nth(*i).unwrap().deref().clone()
+    }
 
     pub fn new() -> ValueMap {
         ValueMap {
@@ -54,10 +63,13 @@ impl ValueMap {
     }
 
     pub fn get(&self, key: &Value) -> Option<Value> {
-        if let Some(hit) = self.map.iter()
+        if let Some(hit) = self
+            .map
+            .iter()
             .filter(|(k, _)| (*k).deref() == key)
             .map(|(_, v)| v)
-            .next() {
+            .next()
+        {
             return Some(hit.deref().clone());
         }
         None
@@ -67,7 +79,9 @@ impl ValueMap {
         self.map.insert(Box::new(k), Box::new(v));
     }
 
-    pub fn remove(&mut self, k: Value) { self.map.remove(&k); }
+    pub fn remove(&mut self, k: Value) {
+        self.map.remove(&k);
+    }
 
     pub fn iter(&self) -> Iter<'_, Box<Value>, Box<Value>> {
         self.map.iter()
@@ -84,17 +98,14 @@ impl PartialEq for Value {
             (INTEGERVAL(i), INTEGERVAL(j)) => i == j,
             (FLOATVAL(i), FLOATVAL(j)) => i == j,
 
-            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i))
-            => { (*i as f64) == *j }
+            (INTEGERVAL(i), FLOATVAL(j)) | (FLOATVAL(j), INTEGERVAL(i)) => (*i as f64) == *j,
 
-            (OPTIONVAL(i), OPTIONVAL(j)) => {
-                match (i, j) {
-                    (None, None) => { true }
-                    (Some(i), Some(j)) => { i == j }
-                    (_, _) => { false }
-                }
-            }
-            _ => { false }
+            (OPTIONVAL(i), OPTIONVAL(j)) => match (i, j) {
+                (None, None) => true,
+                (Some(i), Some(j)) => i == j,
+                (_, _) => false,
+            },
+            _ => false,
         }
     }
 }
@@ -102,19 +113,21 @@ impl PartialEq for Value {
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (INTEGERVAL(i), FLOATVAL(j)) => { Some((*i as f64).total_cmp(j)) }
-            (FLOATVAL(j), INTEGERVAL(i)) => { Some(j.total_cmp(&(*i as f64))) }
+            (INTEGERVAL(i), FLOATVAL(j)) => Some((*i as f64).total_cmp(j)),
+            (FLOATVAL(j), INTEGERVAL(i)) => Some(j.total_cmp(&(*i as f64))),
             (INTEGERVAL(i), INTEGERVAL(j)) => Some(i.cmp(j)),
             (FLOATVAL(i), FLOATVAL(j)) => {
-                if i > j { return Some(Ordering::Greater); } else if i < j { return Some(Ordering::Less); }
+                if i > j {
+                    return Some(Ordering::Greater);
+                } else if i < j {
+                    return Some(Ordering::Less);
+                }
                 Some(Ordering::Equal)
             }
-            (OPTIONVAL(i), OPTIONVAL(j)) => {
-                Some(i.cmp(j))
-            }
+            (OPTIONVAL(i), OPTIONVAL(j)) => Some(i.cmp(j)),
             (BOOLEANVAL(i), BOOLEANVAL(j)) => Some(i.cmp(j)),
             (STRINGVAL(i), STRINGVAL(j)) => Some(i.cmp(j)),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -122,48 +135,59 @@ impl PartialOrd for Value {
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.partial_cmp(other) {
-            None => { Ordering::Less }
-            Some(cmp) => { cmp }
+            None => Ordering::Less,
+            Some(cmp) => cmp,
         }
     }
 }
 
-impl Display for Value { // not in boilerplate because it's an important user-facing implementation.
+impl Display for Value {
+    // not in boilerplate because it's an important user-facing implementation.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let string = match self {
-            LAZYVAL(_) => { "(not yet evaluated)".to_string() }
-            INTEGERVAL(int) => { int.to_string() }
-            FLOATVAL(flt) => { format!("{flt}{}", if flt.fract() > 0.0 { "" } else { ".0" }) }
-            STRINGVAL(str) => { str.clone() }
-            BOOLEANVAL(boo) => { boo.to_string() }
-            LAMBDAVAL { .. } => { "applicable".to_string() }
+            LAZYVAL(_) => "(not yet evaluated)".to_string(),
+            INTEGERVAL(int) => int.to_string(),
+            FLOATVAL(flt) => {
+                format!("{flt}{}", if flt.fract() > 0.0 { "" } else { ".0" })
+            }
+            STRINGVAL(str) => str.clone(),
+            BOOLEANVAL(boo) => boo.to_string(),
+            LAMBDAVAL { .. } => "applicable".to_string(),
             ASSOCIATIONVAL(map) => {
-                let mut pairs = map.map.iter()
+                let mut pairs = map
+                    .map
+                    .iter()
                     .map(|(k, v)| format!("{k}: {v}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let keys = map.map.iter()
+                let keys = map
+                    .map
+                    .iter()
                     .map(|(k, _)| k.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                let vals = map.map.iter()
+                let vals = map
+                    .map
+                    .iter()
                     .map(|(_, v)| v.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                if let Some(val) = &map.default { pairs += format!(", _: {}", val).as_str(); }
+                if let Some(val) = &map.default {
+                    pairs += format!(", _: {}", val).as_str();
+                }
                 format!("[{pairs}]\nkeys:   [{keys}]\nvalues: [{vals}]")
             }
-            NOTAVAL => { "NOTAVAL".to_string() }
-            ERRVAL => { "ERR".to_string().red() }
-            RETURNVAL(val) => { val.to_string() }
-            OPTIONVAL(val) => {
-                match val {
-                    None => { "?_".to_string() }
-                    Some(v) => { format!("?{}", v) }
+            NOTAVAL => "NOTAVAL".to_string(),
+            ERRVAL => "ERR".to_string().red(),
+            RETURNVAL(val) => val.to_string(),
+            OPTIONVAL(val) => match val {
+                None => "?_".to_string(),
+                Some(v) => {
+                    format!("?{}", v)
                 }
-            }
-            UNDERSCOREVAL => "_".to_string()
+            },
+            UNDERSCOREVAL => "_".to_string(),
         };
         f.write_str(string.as_str())
     }
@@ -173,15 +197,15 @@ impl Display for Value { // not in boilerplate because it's an important user-fa
 impl Value {
     pub fn type_equals(&self, other: &Value) -> bool {
         match (self, other) {
-            (INTEGERVAL(_), INTEGERVAL(_)) |
-            (FLOATVAL(_), FLOATVAL(_)) |
-            (STRINGVAL(_), STRINGVAL(_)) |
-            (BOOLEANVAL(_), BOOLEANVAL(_)) |
-            (ERRVAL, ERRVAL) |
-            (LAMBDAVAL { .. }, LAMBDAVAL { .. }) |
-            (UNDERSCOREVAL, UNDERSCOREVAL) |
-            (NOTAVAL, NOTAVAL) => { true }
-            (_, _) => false
+            (INTEGERVAL(_), INTEGERVAL(_))
+            | (FLOATVAL(_), FLOATVAL(_))
+            | (STRINGVAL(_), STRINGVAL(_))
+            | (BOOLEANVAL(_), BOOLEANVAL(_))
+            | (ERRVAL, ERRVAL)
+            | (LAMBDAVAL { .. }, LAMBDAVAL { .. })
+            | (UNDERSCOREVAL, UNDERSCOREVAL)
+            | (NOTAVAL, NOTAVAL) => true,
+            (_, _) => false,
         }
     }
 
@@ -194,122 +218,193 @@ impl Value {
             STRINGVAL(str) => BOOLEANVAL(str.len() > 0),
             OPTIONVAL(opt) => BOOLEANVAL(opt.is_some()),
             ASSOCIATIONVAL(map) => BOOLEANVAL(map.iter().len() > 0),
-            _ => { ERRVAL }
+            _ => ERRVAL,
         };
     }
 
     pub fn not_it(&self) -> Value {
         match self {
             INTEGERVAL(_) | FLOATVAL(_) => self.as_bool_val().not_it(),
-            BOOLEANVAL(boo) => { BOOLEANVAL(!boo) }
-            _ => { ERRVAL }
+            BOOLEANVAL(boo) => BOOLEANVAL(!boo),
+            _ => ERRVAL,
         }
     }
 
     pub fn minus_it(&self) -> Value {
         match self {
-            INTEGERVAL(int) => { INTEGERVAL(-int) }
-            FLOATVAL(flt) => { FLOATVAL(flt.neg()) }
-            _ => { ERRVAL }
+            INTEGERVAL(int) => INTEGERVAL(-int),
+            FLOATVAL(flt) => FLOATVAL(flt.neg()),
+            _ => ERRVAL,
         }
     }
 
     pub fn print_it(&self, env: &mut Environment, tag: Option<String>) {
         let tag = match tag {
-            None => { String::new() }
-            Some(str) => {format!("{}: ", str)}
+            None => String::new(),
+            Some(str) => {
+                format!("{}: ", str)
+            }
         };
         let start_new_line = env.last_print_line != env.coord.row;
         env.last_print_line = env.coord.row;
-        if start_new_line { print!("\n{}{}", tag, &self); } else { print!(" {}{}", tag, &self); }
+        if start_new_line {
+            print!("\n{}{}", tag, &self);
+        } else {
+            print!(" {}{}", tag, &self);
+        }
     }
 
     pub fn minus_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { INTEGERVAL(i - j) }
-            (INTEGERVAL(i), FLOATVAL(J)) => { FLOATVAL(*i as f64 - J) }
-            (FLOATVAL(I), INTEGERVAL(j)) => { FLOATVAL(I - *j as f64) }
-            (FLOATVAL(I), FLOATVAL(J)) => { FLOATVAL(I - J) }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => INTEGERVAL(i - j),
+            (INTEGERVAL(i), FLOATVAL(J)) => FLOATVAL(*i as f64 - J),
+            (FLOATVAL(I), INTEGERVAL(j)) => FLOATVAL(I - *j as f64),
+            (FLOATVAL(I), FLOATVAL(J)) => FLOATVAL(I - J),
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn plus_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { INTEGERVAL(i + j) }
-            (INTEGERVAL(i), FLOATVAL(J)) => { FLOATVAL(*i as f64 + J) }
-            (FLOATVAL(I), INTEGERVAL(j)) => { FLOATVAL(I + *j as f64) }
-            (FLOATVAL(I), FLOATVAL(J)) => { FLOATVAL(I + J) }
-            (STRINGVAL(s1), STRINGVAL(s2)) => { STRINGVAL(format!("{}{}", s1, s2)) }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => INTEGERVAL(i + j),
+            (INTEGERVAL(i), FLOATVAL(J)) => FLOATVAL(*i as f64 + J),
+            (FLOATVAL(I), INTEGERVAL(j)) => FLOATVAL(I + *j as f64),
+            (FLOATVAL(I), FLOATVAL(J)) => FLOATVAL(I + J),
+            (STRINGVAL(s1), STRINGVAL(s2)) => STRINGVAL(format!("{}{}", s1, s2)),
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn mul_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { INTEGERVAL(i * j) }
-            (INTEGERVAL(i), FLOATVAL(J)) => { FLOATVAL(*i as f64 * J) }
-            (FLOATVAL(I), INTEGERVAL(j)) => { FLOATVAL(I * *j as f64) }
-            (FLOATVAL(I), FLOATVAL(J)) => { FLOATVAL(I * J) }
+            (INTEGERVAL(i), INTEGERVAL(j)) => INTEGERVAL(i * j),
+            (INTEGERVAL(i), FLOATVAL(J)) => FLOATVAL(*i as f64 * J),
+            (FLOATVAL(I), INTEGERVAL(j)) => FLOATVAL(I * *j as f64),
+            (FLOATVAL(I), FLOATVAL(J)) => FLOATVAL(I * J),
             // bool*num
-            (INTEGERVAL(i), BOOLEANVAL(boo)) => { INTEGERVAL(if *boo { *i } else { 0 }) }
-            (BOOLEANVAL(boo), INTEGERVAL(j)) => { INTEGERVAL(if *boo { *j } else { 0 }) }
-            (FLOATVAL(I), BOOLEANVAL(boo)) => { FLOATVAL(if *boo { *I } else { 0.0 }) }
-            (BOOLEANVAL(boo), FLOATVAL(J)) => { FLOATVAL(if *boo { *J } else { 0.0 }) }
+            (INTEGERVAL(i), BOOLEANVAL(boo)) => INTEGERVAL(if *boo { *i } else { 0 }),
+            (BOOLEANVAL(boo), INTEGERVAL(j)) => INTEGERVAL(if *boo { *j } else { 0 }),
+            (FLOATVAL(I), BOOLEANVAL(boo)) => FLOATVAL(if *boo { *I } else { 0.0 }),
+            (BOOLEANVAL(boo), FLOATVAL(J)) => FLOATVAL(if *boo { *J } else { 0.0 }),
             // strings
-            (INTEGERVAL(i), STRINGVAL(s)) => { STRINGVAL(s.repeat(*i as usize)) }
-            (STRINGVAL(s), INTEGERVAL(j)) => { STRINGVAL(s.repeat(*j as usize)) }
-            (STRINGVAL(s1), STRINGVAL(s2)) => { STRINGVAL(format!("{}{}", s1, s2)) }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), STRINGVAL(s)) => STRINGVAL(s.repeat(*i as usize)),
+            (STRINGVAL(s), INTEGERVAL(j)) => STRINGVAL(s.repeat(*j as usize)),
+            (STRINGVAL(s1), STRINGVAL(s2)) => STRINGVAL(format!("{}{}", s1, s2)),
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn div_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(*i / *j) } }
-            (INTEGERVAL(i), FLOATVAL(J)) => { if *J == 0.0 { ERRVAL } else { FLOATVAL(*i as f64 / *J) } }
-            (FLOATVAL(I), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { FLOATVAL(*I / *j as f64) } }
-            (FLOATVAL(I), FLOATVAL(J)) => { if *J == 0.0 { ERRVAL } else { FLOATVAL(*I / *J) } }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => {
+                if *j == 0 {
+                    ERRVAL
+                } else {
+                    INTEGERVAL(*i / *j)
+                }
+            }
+            (INTEGERVAL(i), FLOATVAL(J)) => {
+                if *J == 0.0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL(*i as f64 / *J)
+                }
+            }
+            (FLOATVAL(I), INTEGERVAL(j)) => {
+                if *j == 0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL(*I / *j as f64)
+                }
+            }
+            (FLOATVAL(I), FLOATVAL(J)) => {
+                if *J == 0.0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL(*I / *J)
+                }
+            }
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn pow_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { if *i + *j == 0 { ERRVAL } else { INTEGERVAL(i.pow(*j as u32)) } }
-            (INTEGERVAL(i), FLOATVAL(J)) => { if *i as f64 + *J == 0.0 { ERRVAL } else { FLOATVAL((*i as f64).powf(*J)) } }
-            (FLOATVAL(I), INTEGERVAL(j)) => { if *I + *j as f64 == 0.0 { ERRVAL } else { FLOATVAL(I.powi(*j as i32)) } }
-            (FLOATVAL(I), FLOATVAL(J)) => { if *I + *J == 0.0 { ERRVAL } else { FLOATVAL(I.powf(*J)) } }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => {
+                if *i + *j == 0 {
+                    ERRVAL
+                } else {
+                    INTEGERVAL(i.pow(*j as u32))
+                }
+            }
+            (INTEGERVAL(i), FLOATVAL(J)) => {
+                if *i as f64 + *J == 0.0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL((*i as f64).powf(*J))
+                }
+            }
+            (FLOATVAL(I), INTEGERVAL(j)) => {
+                if *I + *j as f64 == 0.0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL(I.powi(*j as i32))
+                }
+            }
+            (FLOATVAL(I), FLOATVAL(J)) => {
+                if *I + *J == 0.0 {
+                    ERRVAL
+                } else {
+                    FLOATVAL(I.powf(*J))
+                }
+            }
+            (_, _) => ERRVAL,
         }
     }
 
-
     pub fn modulo_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(*i % *j) } }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => {
+                if *j == 0 {
+                    ERRVAL
+                } else {
+                    INTEGERVAL(*i % *j)
+                }
+            }
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn min_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(min(*i, *j)) } }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => {
+                if *j == 0 {
+                    ERRVAL
+                } else {
+                    INTEGERVAL(min(*i, *j))
+                }
+            }
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn max_them(&self, other: &Value) -> Value {
         match (self, other) {
-            (INTEGERVAL(i), INTEGERVAL(j)) => { if *j == 0 { ERRVAL } else { INTEGERVAL(max(*i, *j)) } }
-            (_, _) => ERRVAL
+            (INTEGERVAL(i), INTEGERVAL(j)) => {
+                if *j == 0 {
+                    ERRVAL
+                } else {
+                    INTEGERVAL(max(*i, *j))
+                }
+            }
+            (_, _) => ERRVAL,
         }
     }
 
     pub fn cmp_them(&self, other: &Value, cmp: fn(&Value, &Value) -> bool) -> Value {
         match self.partial_cmp(other) {
-            None => { ERRVAL }
-            Some(_) => { BOOLEANVAL(cmp(self, other)) }
+            None => ERRVAL,
+            Some(_) => BOOLEANVAL(cmp(self, other)),
         }
     }
 }

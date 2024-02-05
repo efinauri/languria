@@ -4,9 +4,9 @@ mod tests {
 
     use rand::Rng;
 
-    use crate::environment::Environment;
-    use crate::environment::value::Value::{BOOLEANVAL, INTEGERVAL, NOTAVAL, OPTIONVAL, STRINGVAL};
     use crate::environment::value::Value;
+    use crate::environment::value::Value::{BOOLEANVAL, INTEGERVAL, NOTAVAL, OPTIONVAL, STRINGVAL};
+    use crate::environment::Environment;
     use crate::errors::ErrorScribe;
     use crate::evaluator::Evaluator;
     use crate::lexer::Token;
@@ -15,38 +15,42 @@ mod tests {
     use crate::parser::Expression::*;
 
     fn int_expr(n: i64) -> Box<Expression> {
-        Box::new(
-            LITERAL(
-                Token::debug(INTEGER(n))))
+        Box::new(LITERAL(Token::debug(INTEGER(n))))
     }
 
     fn str_expr(str: &str) -> Box<Expression> {
-        Box::new(
-            LITERAL(
-                Token::debug(STRING(str.parse().unwrap()))))
+        Box::new(LITERAL(Token::debug(STRING(str.parse().unwrap()))))
     }
 
     fn bool_expr(b: bool) -> Box<Expression> {
-        Box::new(
-            LITERAL(
-                Token::debug(if b { TRUE } else { FALSE })))
+        Box::new(LITERAL(Token::debug(if b { TRUE } else { FALSE })))
     }
 
-    fn int_val(n: i64) -> Value { INTEGERVAL(n) }
+    fn int_val(n: i64) -> Value {
+        INTEGERVAL(n)
+    }
 
-    fn yes_val(v: Value) -> Value { OPTIONVAL(Some(Box::new(v))) }
+    fn yes_val(v: Value) -> Value {
+        OPTIONVAL(Some(Box::new(v)))
+    }
 
-    fn str_val(str: &str) -> Value { STRINGVAL(str.parse().unwrap()) }
+    fn str_val(str: &str) -> Value {
+        STRINGVAL(str.parse().unwrap())
+    }
 
     impl<'a> Evaluator<'a> {
-        fn from_debug(exp_queue: &'a mut VecDeque<Expression>, scribe: &'a mut ErrorScribe, env: &'a mut Environment) -> Evaluator<'a> {
+        fn from_debug(
+            exp_queue: &'a mut VecDeque<Expression>,
+            scribe: &'a mut ErrorScribe,
+            env: &'a mut Environment,
+        ) -> Evaluator<'a> {
             Evaluator {
                 exp_queue,
                 op_queue: Default::default(),
                 val_queue: Default::default(),
                 scribe,
                 env,
-                verbose: false
+                verbose: false,
             }
         }
     }
@@ -64,18 +68,11 @@ mod tests {
 
     #[test]
     fn eval_pull() {
-        let mut vec = VecDeque::from(
-            vec![
-                PULL_EXPR {
-                    source: Box::new(
-                        ASSOCIATION_EXPR(vec![
-                            (str_expr("s"), int_expr(2))
-                        ], true)
-                    ),
-                    op: Token::debug(PULL),
-                    key: str_expr("s"),
-                }
-            ]);
+        let mut vec = VecDeque::from(vec![PULL_EXPR {
+            source: Box::new(ASSOCIATION_EXPR(vec![(str_expr("s"), int_expr(2))], true)),
+            op: Token::debug(PULL),
+            key: str_expr("s"),
+        }]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
@@ -87,18 +84,14 @@ mod tests {
 
     #[test]
     fn eval_default_pull() {
-        let mut vec = VecDeque::from(
-            vec![
-                PULL_EXPR {
-                    source: Box::new(
-                        ASSOCIATION_EXPR(vec![
-                            (Box::new(UNDERSCORE_EXPR(Default::default())), int_expr(2))
-                        ], true)
-                    ),
-                    op: Token::debug(PULL),
-                    key: str_expr("r"),
-                }
-            ]);
+        let mut vec = VecDeque::from(vec![PULL_EXPR {
+            source: Box::new(ASSOCIATION_EXPR(
+                vec![(Box::new(UNDERSCORE_EXPR(Default::default())), int_expr(2))],
+                true,
+            )),
+            op: Token::debug(PULL),
+            key: str_expr("r"),
+        }]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
@@ -110,12 +103,10 @@ mod tests {
 
     #[test]
     fn return_in_block() {
-        let mut vec = VecDeque::from(
-            vec![BLOCK(vec![
-                    Box::new(RETURN_EXPR(int_expr(2))),
-                    str_expr("s")
-                ])
-            ]);
+        let mut vec = VecDeque::from(vec![BLOCK(vec![
+            Box::new(RETURN_EXPR(int_expr(2))),
+            str_expr("s"),
+        ])]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
@@ -127,22 +118,19 @@ mod tests {
 
     #[test]
     fn application() {
-        let mut vec = VecDeque::from(
-            vec![
-                APPLIED_EXPR {
-                    it_arg: int_expr(2),
-                    contour_args: None,
-                    op: Token::debug(AT),
-                    body: Box::new(APPLICABLE_EXPR {
-                        params: Box::new(ARGS(vec![])),
-                        body: Box::new(BINARY {
-                            lhs: Box::new(LITERAL(Token::debug(IT))),
-                            op: Token::debug(MUL),
-                            rhs: str_expr("s"),
-                        }),
-                    }),
-                }
-            ]);
+        let mut vec = VecDeque::from(vec![APPLIED_EXPR {
+            it_arg: int_expr(2),
+            contour_args: None,
+            op: Token::debug(AT),
+            body: Box::new(APPLICABLE_EXPR {
+                params: Box::new(ARGS(vec![])),
+                body: Box::new(BINARY {
+                    lhs: Box::new(LITERAL(Token::debug(IT))),
+                    op: Token::debug(MUL),
+                    rhs: str_expr("s"),
+                }),
+            }),
+        }]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
@@ -154,13 +142,10 @@ mod tests {
 
     #[test]
     fn unary() {
-        let mut vec = VecDeque::from(
-            vec![
-                UNARY {
-                    op: Token::debug(NOT),
-                    expr: int_expr(2),
-                },
-            ]);
+        let mut vec = VecDeque::from(vec![UNARY {
+            op: Token::debug(NOT),
+            expr: int_expr(2),
+        }]);
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
@@ -176,24 +161,16 @@ mod tests {
         let mut env = Environment::new();
         for lhs in [true, false] {
             for rhs in [true, false] {
-                for (op, tok) in
-                [
-                    |a, b| a || b,
-                    |a, b| a && b,
-                    |a, b| a ^ b
-                ]
-                    .iter().zip([
+                for (op, tok) in [|a, b| a || b, |a, b| a && b, |a, b| a ^ b].iter().zip([
                     Token::debug(OR),
                     Token::debug(AND),
-                    Token::debug(XOR)]) {
-                    let mut vec = VecDeque::from(
-                        vec![
-                            LOGIC {
-                                lhs: bool_expr(lhs),
-                                op: tok,
-                                rhs: bool_expr(rhs),
-                            }
-                        ]);
+                    Token::debug(XOR),
+                ]) {
+                    let mut vec = VecDeque::from(vec![LOGIC {
+                        lhs: bool_expr(lhs),
+                        op: tok,
+                        rhs: bool_expr(rhs),
+                    }]);
                     let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
                     let v = eval.value();
                     dbg!(&v);
@@ -208,15 +185,15 @@ mod tests {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         for _ in 0..10 {
-            for (op, tok) in
-            [
+            for (op, tok) in [
                 |a, b| a + b,
                 |a, b| a - b,
                 |a, b| a * b,
                 |a, b| a / b,
                 |a, b| a % b,
             ]
-                .iter().zip([
+            .iter()
+            .zip([
                 Token::debug(PLUS),
                 Token::debug(MINUS),
                 Token::debug(MUL),
@@ -225,14 +202,11 @@ mod tests {
             ]) {
                 let a = rand::thread_rng().gen_range(0..10);
                 let b = rand::thread_rng().gen_range(1..10);
-                let mut vec = VecDeque::from(
-                    vec![
-                        BINARY {
-                            lhs: int_expr(a),
-                            op: tok.clone(),
-                            rhs: int_expr(b),
-                        }
-                    ]);
+                let mut vec = VecDeque::from(vec![BINARY {
+                    lhs: int_expr(a),
+                    op: tok.clone(),
+                    rhs: int_expr(b),
+                }]);
                 let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
                 let v = eval.value();
                 dbg!(&v);
@@ -246,8 +220,7 @@ mod tests {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
         for _ in 0..10 {
-            for (op, tok) in
-            [
+            for (op, tok) in [
                 |a, b| a > b,
                 |a, b| a < b,
                 |a, b| a >= b,
@@ -255,7 +228,8 @@ mod tests {
                 |a, b| a == b,
                 |a, b| a != b,
             ]
-                .iter().zip([
+            .iter()
+            .zip([
                 Token::debug(GT),
                 Token::debug(LT),
                 Token::debug(GTE),
@@ -265,14 +239,11 @@ mod tests {
             ]) {
                 let a = rand::thread_rng().gen_range(0..10);
                 let b = rand::thread_rng().gen_range(1..10);
-                let mut vec = VecDeque::from(
-                    vec![
-                        BINARY {
-                            lhs: int_expr(a),
-                            op: tok,
-                            rhs: int_expr(b),
-                        }
-                    ]);
+                let mut vec = VecDeque::from(vec![BINARY {
+                    lhs: int_expr(a),
+                    op: tok,
+                    rhs: int_expr(b),
+                }]);
                 let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
                 let v = eval.value();
                 dbg!(&v);
@@ -285,15 +256,14 @@ mod tests {
     fn fstring() {
         let mut es = ErrorScribe::debug();
         let mut env = Environment::new();
-        let mut vec = VecDeque::from(
-            vec![
-                LITERAL(Token::debug(STRING("x={x}{x}".to_string()))),
-                VAR_ASSIGN {
-                    varname: "x".to_string(),
-                    op: Token::debug(ASSIGN),
-                    varval: int_expr(2),
-                }
-            ]);
+        let mut vec = VecDeque::from(vec![
+            LITERAL(Token::debug(STRING("x={x}{x}".to_string()))),
+            VAR_ASSIGN {
+                varname: "x".to_string(),
+                op: Token::debug(ASSIGN),
+                varval: int_expr(2),
+            },
+        ]);
         let mut eval = Evaluator::from_debug(&mut vec, &mut es, &mut env);
         let v = eval.value();
         dbg!(&v);
