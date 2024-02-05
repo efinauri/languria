@@ -51,7 +51,6 @@ pub fn at_applicable_resolver_op(eval: &mut Evaluator) -> Value {
     let body = if let LAMBDAVAL { params: _params, body } = body_val {
         body
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
-    // eval.add_scope_closure_lazily(1);
     eval.exp_queue.push_back(*body);
     NOTAVAL
 }
@@ -82,7 +81,8 @@ pub fn iterative_param_binder_op(eval: &mut Evaluator, past_iterations: &usize, 
             idx = INTEGERVAL(*past_iterations as i64);
             len = -1;
         }
-        _ => { return eval.error(EVAL_ITER_APPL_ON_NONITER(iterand.deref().clone())); } }
+        _ => { return eval.error(EVAL_ITER_APPL_ON_NONITER(iterand.deref().clone())); }
+    }
     eval.env.write_binding(&"it".to_string(), &it);
     eval.env.write_binding(&"ti".to_string(), &ti);
     eval.env.write_binding(&"idx".to_string(), &idx);
@@ -114,32 +114,24 @@ pub fn bind_application_args_to_params_op(eval: &mut Evaluator, amount_of_passed
             _ => eval.error(EVAL_ITER_APPL_ON_NONITER(arg))
         };
     }
-    // | args | @ lambdaval, where lambdaval = | params | body
+    // it_arg @ applicable(contour_args)
+    // read the body from the queue to understand the params it's requiring. generic expressions are treated as having no args.
     let body_expr = eval.exp_queue.back().unwrap().clone();
     let body_expr = body_expr.ok_or_var_with_applicable(eval);
-    let lambda_contents = if let Expression::APPLICABLE_EXPR {
-        params, body
-    } = body_expr.deref() {
-        (params.deref().clone(), body.deref().clone())
+    let params = if let Expression::APPLICABLE_EXPR { params, body: _ignored } = body_expr.deref() { params.deref().clone()
     } else { return eval.error(EVAL_ARGS_TO_NOT_APPLICABLE); };
 
-    let params = lambda_contents.0;
     let params = if let Expression::ARGS(mut params) = params {
         params.reverse();
         params
     } else { unreachable!() };
-    if params.len() != *amount_of_passed_args {
-        // only acceptable when calling an argless function with _.
-        if *amount_of_passed_args > params.len()
-            && *amount_of_passed_args - params.len() == 1
-            && eval.val_queue.back().is_some_and(
-            |v| v.type_equals(&UNDERSCOREVAL)) { eval.val_queue.pop_back(); } else {
-            return eval.error(EVAL_UNEXPECTED_NUMBER_OF_PARAMS {
-                passed: *amount_of_passed_args,
-                expected: params.len(),
-            });
-        }
+    if 1 + params.len() != *amount_of_passed_args {
+        return eval.error(EVAL_UNEXPECTED_NUMBER_OF_PARAMS {
+            passed: *amount_of_passed_args,
+            expected: params.len(),
+        });
     }
+    eval.env.write_binding(&"it".to_string(), &eval.val_queue.pop_back().unwrap());
     for param in params {
         if let Expression::VAR_RAW(_, varname) = *param {
             eval.env.write_binding(&varname, &eval.val_queue.pop_back().unwrap());

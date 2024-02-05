@@ -107,9 +107,10 @@ mod tests {
         let expr = p.build_expression();
         dbg!(&expr);
         assert!(expr.type_equals(&APPLIED_EXPR {
-            arg: Box::new(NOTANEXPR),
+            it_arg: Box::new(NOTANEXPR),
             op: Token::debug(NOTATOKEN),
             body: Box::new(NOTANEXPR),
+            contour_args: None,
         }));
     }
 

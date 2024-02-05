@@ -38,10 +38,10 @@ This is an overview of the primitive types:
 | Integer     | `1`          | [link](#INTEGERS-AND-FLOATS) |
 | Float       | `1.5`        | [link](#INTEGERS-AND-FLOATS) |
 | Boolean     | `true`       | [link](#BOOLEANS)            |
-| String      | `example`    | [link](#STRINGS)             |
+| String      | `"example"`  | [link](#STRINGS)             |
 | Association | `[1: "one"]` | [link](#ASSOCIATIONS)        |
-| Option      | `<0.8>`      | [link](#OPTIONS)             |
-| Applicable  | `it * 2`     | [link](#APPLICABLES)         |
+| Option      | `?0.8`       | [link](#OPTIONS)             |
+| Applicable  | `\|n\|n * 2` | [link](#APPLICABLES)         |
 | Literal     | `x`          | -                            |
 
 A scope, which is a section of code between {}, evaluates to whatever is explicitly returned in the middle of it, or what's produced by the last expression in the scope.
@@ -162,7 +162,7 @@ Integers and floats are 64bit and signed. Languria implicitly converts between t
 The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both operands are ints), `^` (exponentiation, also used for roots if you pass a fractional exponent).
 
 ```
-17 % 3 == 2
+17 % 3  // 2
 17/3  // 5
 17/3  // 5.666666666666667
 8 ^ 4  // 4096
@@ -192,7 +192,7 @@ no_default = [1: 2]
 If you're following along and trying the commands out, you probably noticed something strange the first line of the above example:
 its REPL output was `[1: (not yet evaluated), 2: (not yet evaluated), _: (not yet evaluated)]`.
 
-This happens because, by default, values in associations are lazily evaluated, in order to prevent side effects and use them for control flow.
+This happens because, by default, values in associations are only evaluated when pulled out.
 In the case above, being queried by `2` caused the key `"three"` to evaluate to that string.
 
 When needed, you can prepend `!!` to an association to evaluate its values right away.
@@ -240,19 +240,33 @@ reversed_list = !!:[5..0]
 
 An applicable is an expression that holds onto a piece of code with some placeholders, 
 and that undergoes an additional evaluation phase, called application, if fed values through the operators `@` or `@@`.
-
 During an application, the applicable's body is evaluated with those values in place of the placeholders.
-Below are some basic examples of normal @-applications.
+
+Let's examine the usage of an @-applicable:
 
 ```
-add_one = |n| n + 1
-|2| @ add_one == 3
-|2| @ add_one == 2 @ add_one  // if the applicable needs to be fed only 1 value, the bars are optional.
-2 @ add_one @ add_one == 4 // you can chain applicables.
-|4| @ |n|(n ^ 2) @ |n|n / 3  // 5
-// careful about specifying the applicable's limits! without the parentheses, this is what would've been specified:
-|4| @ |n| n^(2 @ |n| n/3)  // 1
+repeat = |times, separator| (it + separator) * (times - 1) + it
+add_dot = || it + "."
+
+"hello"
+    @ repeat(2, " ")
+    @ add_dot
+    @ || (it + "..")
+// prints "hello hello..."
 ```
+
+In this example, `repeat` is receiving the values: `"hello"`, `2`, and `" "`. 
+
+The first of the three has "preferential treatment": during the application phase, it alone gets to the applicable via `@`; 
+additionally, when defining an applicable, it maps to the builtin placeholder `it`. 
+The other "auxiliary" values (if any are needed) instead map to the named placeholders defined between pipes, before the applicable's body.
+
+As for `add_dot`, note that even though it requires no auxiliary values, it was necessary to pass an empty piping `||` when storing the applicable into it.
+On the contrary, during an application empty parentheses are optional.
+
+Lastly, the example above also shows that, when no auxiliary values are needed, it's possible to directly apply a value 
+to an expression with the `it` placeholder. The consideration made above about parentheses and pipes still apply.
+
 
 The operator `@@` is, instead, special in terms of its input, effect, receiver and output.
 - The input is an association, or anything that could otherwise be thought of as a collection of elements (currently only strings fit this second category).

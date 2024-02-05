@@ -1,14 +1,14 @@
-fn = |n| {
-    a = |n| {
-        b = |n| {
-            e = |pewn| pewn
-            d = |wer| wer
-            c = |n| n * 3
-            n @ c
+fn = || {
+    a = || {
+        b = || {
+            e = |aaa| it
+            d = |ccc| ccc
+            c = || it * 3
+            it @ c
         }
-        n @ b
+        it @ b
     }
-    n @ a
+    it @ a
 }
 
-5 @ fn
+5 @ fn  // 15

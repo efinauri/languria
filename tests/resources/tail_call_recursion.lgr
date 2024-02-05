@@ -1,4 +1,5 @@
-fn = |n| {
+fn = || {
+    n = it
     loop = || {
         n == 0 and return n
         $n -= 1
@@ -7,4 +8,4 @@ fn = |n| {
     _@ loop
 }
 
-5 @ fn
+5_000 @ fn

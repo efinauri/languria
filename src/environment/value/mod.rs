@@ -143,11 +143,11 @@ impl Display for Value { // not in boilerplate because it's an important user-fa
                     .collect::<Vec<_>>()
                     .join(", ");
                 let keys = map.map.iter()
-                    .map(|(k, v)| k.to_string())
+                    .map(|(k, _)| k.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
                 let vals = map.map.iter()
-                    .map(|(k, v)| v.to_string())
+                    .map(|(_, v)| v.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 

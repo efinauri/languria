@@ -133,9 +133,9 @@ impl Expression {
                     .map(|(e, i)| e.indented_string(format!("block[{i}]: ").as_str(), idt + 1))
                     .collect::<Vec<_>>()
                     .join("\n")),
-            APPLIED_EXPR { arg, op, body } =>
+            APPLIED_EXPR { it_arg, op, body, contour_args: _ignored } =>
                 format!("APPLIED ({op},\n{}\n{}",
-                        arg.indented_string("applied arg: ", idt + 1),
+                        it_arg.indented_string("it-arg: ", idt + 1),
                         body.indented_string("applied to: ", idt + 1)),
             RETURN_EXPR(expr) => format!("RETURN (\n{}", expr.indented_string("returned: ", idt + 1)),
 

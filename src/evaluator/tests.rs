@@ -130,12 +130,13 @@ mod tests {
         let mut vec = VecDeque::from(
             vec![
                 APPLIED_EXPR {
-                    arg: int_expr(2),
+                    it_arg: int_expr(2),
+                    contour_args: None,
                     op: Token::debug(AT),
                     body: Box::new(APPLICABLE_EXPR {
-                        params: Box::new(ARGS(vec![Box::new(VAR_RAW(Default::default(), "n".to_string()))])),
+                        params: Box::new(ARGS(vec![])),
                         body: Box::new(BINARY {
-                            lhs: Box::new(VAR_RAW(Default::default(), "n".parse().unwrap())),
+                            lhs: Box::new(LITERAL(Token::debug(IT))),
                             op: Token::debug(MUL),
                             rhs: str_expr("s"),
                         }),

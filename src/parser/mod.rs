@@ -2,13 +2,13 @@ use std::collections::VecDeque;
 use std::vec;
 
 use crate::{Cursor, WalksCollection};
+use crate::boilerplate::ZERO_COORD;
 use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::Evaluator;
 use crate::lexer::{Coord, Token, TokenType};
 use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
-use crate::boilerplate::ZERO_COORD;
 
 mod tests;
 
@@ -23,7 +23,13 @@ pub enum Expression {
     VAR_ASSIGN { varname: String, op: Token, varval: Box<Expression> },
     VAR_RAW(Coord, String),
     BLOCK(Vec<Box<Expression>>),
-    APPLIED_EXPR { arg: Box<Expression>, op: Token, body: Box<Expression> },
+    APPLICABLE_EXPR { params: Box<Expression>, body: Box<Expression> },
+    APPLIED_EXPR {
+        it_arg: Box<Expression>,
+        op: Token,
+        body: Box<Expression>,
+        contour_args: Option<Vec<Box<Expression>>>,
+    },
     RETURN_EXPR(Box<Expression>),
     ASSOCIATION_EXPR(Vec<(Box<Expression>, Box<Expression>)>, bool),
     LIST_DECLARATION_EXPR { input_type: InputType, items: Vec<Box<Expression>>, is_lazy: bool },
@@ -31,7 +37,6 @@ pub enum Expression {
     PULL_EXPR { source: Box<Expression>, op: Token, key: Box<Expression> },
     PUSH_EXPR { obj: Box<Expression>, args: Box<Expression> },
     ARGS(Vec<Box<Expression>>),
-    APPLICABLE_EXPR { params: Box<Expression>, body: Box<Expression> },
     OPTION_EXPR(Box<Expression>),
     UNDERSCORE_EXPR(Coord),
     PRINT_EXPR(Box<Expression>, Option<String>),
@@ -43,6 +48,13 @@ pub enum Expression {
 }
 
 impl Expression {
+    pub fn into_applicable(self) -> Expression {
+        match &self {
+            VAR_RAW(_, _) | APPLICABLE_EXPR {..} => self,
+            _=> {APPLICABLE_EXPR { params: Box::new(ARGS(vec![])), body: Box::new(self) }}
+        }
+    }
+
     pub fn ok_or_var_with_applicable(&self, eval: &mut Evaluator) -> Box<Expression> {
         if let VAR_RAW(_, varname) = &self {
             if let Value::LAMBDAVAL { params, body }
@@ -339,20 +351,18 @@ impl Parser<'_> {
         while self.curr_in(&APPLICATION_TOKENS) {
             self.cursor.step_fwd();
             let op = self.read_prev().clone();
-            let mut body = self.primary();
-            if let ARGS(_) = body {
-                body = APPLICABLE_EXPR {
-                    params: Box::new(body),
-                    body: Box::new(self.build_expression()),
-                }
-            };
-            if let BLOCK(v) = body {
-                body = BLOCK(v)
+            let body = self.primary();
+            let mut contour_args = None;
+            if self.curr_in(&[LPAREN]) {
+                self.cursor.step_fwd();
+                contour_args = self.accumulate(RPAREN);
+                self.cursor.step_fwd();
             }
             expr = APPLIED_EXPR {
-                arg: Box::new(expr),
+                it_arg: Box::new(expr),
                 op,
                 body: Box::new(body),
+                contour_args,
             }
         }
         expr

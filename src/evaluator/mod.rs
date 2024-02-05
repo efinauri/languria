@@ -26,7 +26,7 @@ pub struct Evaluator<'a> {
     pub val_queue: VecDeque<Value>,
     pub scribe: &'a mut ErrorScribe,
     pub env: &'a mut Environment,
-    pub verbose: bool
+    pub verbose: bool,
 }
 
 #[derive(PartialEq)]
@@ -48,7 +48,7 @@ impl<'a> Evaluator<'a> {
             val_queue: Default::default(),
             scribe,
             env,
-            verbose: false
+            verbose: false,
         }
     }
 
@@ -173,16 +173,17 @@ impl<'a> Evaluator<'a> {
                         } else { return self.error(EVAL_INVALID_PUSH); }
                     }
                 }
-                Expression::APPLIED_EXPR { arg, op, body } => {
+                Expression::APPLIED_EXPR { it_arg, op, body, contour_args } => {
                     self.create_scope_lazily();
-                    let mut args_size = 1;
-                    if let Expression::ARGS(exprs) = arg.deref() {
-                        args_size = exprs.len();
-                        for ex in exprs { aux_exp_queue.push_front(*ex.to_owned()); }
-                    } else { aux_exp_queue.push_front(*arg) }
-                    aux_exp_queue.push_front(*body);
+                    let mut total_args_size = 1;
+                    if let Some(args) = contour_args {
+                        total_args_size += args.len();
+                        for a in args { aux_exp_queue.push_front(*a.to_owned()); }
+                    }
+                    aux_exp_queue.push_front(*it_arg);
+                    aux_exp_queue.push_front(body.into_applicable());
 
-                    aux_op_queue.push_front(Operation::from_type(BIND_APPLICATION_ARGS_TO_PARAMS_OP(args_size, op.clone())));
+                    aux_op_queue.push_front(Operation::from_type(BIND_APPLICATION_ARGS_TO_PARAMS_OP(total_args_size, op.clone())));
                     if op.type_equals(&AT) {
                         aux_op_queue.push_front(Operation::from_type(AT_APPLICABLE_RESOLVER_OP));
                     }
@@ -292,7 +293,6 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        if can_recycle_current_scope_instead { self.op_queue.pop_back(); }
-        else { self.env.create_scope(); }
+        if can_recycle_current_scope_instead { self.op_queue.pop_back(); } else { self.env.create_scope(); }
     }
 }
