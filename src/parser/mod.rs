@@ -184,7 +184,7 @@ pub enum InputType {
 
 const PULL_TOKENS: [TokenType; 2] = [PULL, PULLEXTRACT];
 const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
-const ASSIGN_TOKENS: [TokenType; 9] = [
+const ASSIGN_TOKENS: [TokenType; 8] = [
     ASSIGN,
     MINASSIGN,
     MAXASSIGN,
@@ -193,11 +193,10 @@ const ASSIGN_TOKENS: [TokenType; 9] = [
     MULASSIGN,
     DIVASSIGN,
     MODULOASSIGN,
-    POWASSIGN,
 ];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
-const MATH_LO_PRIORITY_TOKENS: [TokenType; 2] = [PLUS, MINUS];
+const MATH_LO_PRIORITY_TOKENS: [TokenType; 4] = [PLUS, MINUS, UNION, INTERSECTION];
 const MATH_MED_PRIORITY_TOKENS: [TokenType; 3] = [DIV, MUL, MODULO];
 const MATH_HI_PRIORITY_TOKENS: [TokenType; 1] = [POW];
 const UNARY_TOKENS: [TokenType; 2] = [NOT, MINUS];

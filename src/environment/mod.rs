@@ -124,7 +124,6 @@ impl Scope {
                 MINUSASSIGN => ov.minus_them(&varval),
                 MULASSIGN => varval.mul_them(ov),
                 DIVASSIGN => ov.div_them(&varval),
-                POWASSIGN => ov.pow_them(&varval),
                 MODULOASSIGN => ov.modulo_them(&varval),
                 _ => ERRVAL,
             },

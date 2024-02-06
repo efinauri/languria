@@ -1,12 +1,12 @@
 use std::cmp::{max, min, Ordering};
+use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Iter;
-use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Neg};
 
-use crate::environment::value::Value::*;
 use crate::environment::Environment;
 use crate::environment::Value::{ERRVAL, NOTAVAL};
+use crate::environment::value::Value::*;
 use crate::parser::Expression;
 use crate::user_io::Red;
 
@@ -29,14 +29,6 @@ pub enum Value {
     UNDERSCOREVAL,
 }
 
-impl Value {
-    pub fn unwrap_option(&self) -> Value {
-        match self {
-            OPTIONVAL(Some(val)) => val.deref().clone(),
-            _ => ERRVAL,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct ValueMap {
@@ -45,6 +37,35 @@ pub struct ValueMap {
 }
 
 impl ValueMap {
+    pub fn intersect(&self, other: &ValueMap) -> Value {
+        let k1 = self.map.keys().collect::<BTreeSet<_>>();
+        let k2 = other.map.keys().collect::<BTreeSet<_>>();
+        let mut map = BTreeMap::new();
+        for k in k1.intersection(&k2) {
+            map.insert((*k).to_owned(), self.map.get(*k).unwrap().clone());
+        }
+        ASSOCIATIONVAL(ValueMap {
+            map,
+            default: if other.default.is_some() { self.default.clone() } else { None },
+        })
+    }
+    pub fn unite(&self, other: &ValueMap) -> Value {
+        let k1 = self.map.keys().collect::<BTreeSet<_>>();
+        let k2 = other.map.keys().collect::<BTreeSet<_>>();
+        let mut map = BTreeMap::new();
+        for k in k1.union(&k2) {
+            map.insert(
+                (*k).to_owned(),
+                if self.map.contains_key(*k) {
+                    self.map.get(*k).unwrap().clone()
+                } else { Box::from(other.get(*k).unwrap()) },
+            );
+        }
+        ASSOCIATIONVAL(ValueMap {
+            map,
+            default: if other.default.is_some() { self.default.clone() } else { None },
+        })
+    }
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -134,10 +155,7 @@ impl PartialOrd for Value {
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.partial_cmp(other) {
-            None => Ordering::Less,
-            Some(cmp) => cmp,
-        }
+        self.partial_cmp(other).unwrap_or_else(|| Ordering::Less)
     }
 }
 
@@ -195,6 +213,12 @@ impl Display for Value {
 
 #[allow(non_snake_case)]
 impl Value {
+    pub fn unwrap_option(&self) -> Value {
+        match self {
+            OPTIONVAL(Some(val)) => val.deref().clone(),
+            _ => ERRVAL,
+        }
+    }
     pub fn type_equals(&self, other: &Value) -> bool {
         match (self, other) {
             (INTEGERVAL(_), INTEGERVAL(_))
@@ -405,6 +429,19 @@ impl Value {
         match self.partial_cmp(other) {
             None => ERRVAL,
             Some(_) => BOOLEANVAL(cmp(self, other)),
+        }
+    }
+
+    pub fn intersection_them(&self, other: &Value) -> Value {
+        match (self, other) {
+            (ASSOCIATIONVAL(m1), ASSOCIATIONVAL(m2)) => { m1.intersect(m2) }
+            _ => { ERRVAL }
+        }
+    }
+    pub fn union_them(&self, other: &Value) -> Value {
+        match (self, other) {
+            (ASSOCIATIONVAL(m1), ASSOCIATIONVAL(m2)) => { m1.unite(m2) }
+            _ => { ERRVAL }
         }
     }
 }

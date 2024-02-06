@@ -4,7 +4,7 @@ generate_primes_smaller_than = || { size = it
     _@@ { candidate_prime >= size and return prime_factors
         is_prime = prime_factors @@ {
            candidate_prime % ti == 0 and return false
-           candidate_prime < ti^2 and return true
+           candidate_prime < ti ** 2 and return true
         }
         is_prime and {
            prime_factors << |1 + prime_factors @@idx, candidate_prime|

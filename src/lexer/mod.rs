@@ -65,7 +65,6 @@ pub enum TokenType {
     PLUSASSIGN,
     MINUSASSIGN,
     MODULOASSIGN,
-    POWASSIGN,
     // others
     AT,
     ATAT,
@@ -80,6 +79,8 @@ pub enum TokenType {
     SET,
     LIST,
     RANGE,
+    UNION,
+    INTERSECTION,
     // options
     QUESTIONMARK,
     EXTRACT,
@@ -100,7 +101,8 @@ lazy_static! {
         ("and", AND),
         ("xor", XOR),
         ("or", OR),
-        ("not", NOT)
+        ("not", NOT),
+        ("v", INTERSECTION)
     ]);
 }
 
@@ -345,7 +347,7 @@ impl<'a> Lexer<'_> {
                 }
                 '_' => UNDERSCORE,
                 '%' => MODULO,
-                '^' => POW,
+                '^' => UNION,
                 '|' => {
                     if self.consume_seq_if_eq(">>") {
                         PULLEXTRACT
@@ -379,6 +381,8 @@ impl<'a> Lexer<'_> {
                 '*' => {
                     if self.consume_next_if_eq('=') {
                         MULASSIGN
+                    } else if self.consume_next_if_eq('*') {
+                        POW
                     } else {
                         MUL
                     }
@@ -418,8 +422,6 @@ impl<'a> Lexer<'_> {
                         MINASSIGN
                     } else if self.consume_next_if_eq('%') {
                         MODULOASSIGN
-                    } else if self.consume_next_if_eq('^') {
-                        POWASSIGN
                     } else {
                         ASSIGN
                     }

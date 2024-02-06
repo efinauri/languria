@@ -69,7 +69,7 @@ x = 1  // variables can only come into existence when they are assigned a value.
 1 == (x = 1)  // an assigment expression returns the assigned value.
 x => 2  // equivalent to x = max(x, 2)
 x =< 1  // equivalent to x = min(x, 1)
-// other assign operators: =*, =/, =%, =^
+// other assign operators: =*, =/, =%
 ```
 
 ## PRINT
@@ -159,14 +159,14 @@ The postfix operator `?!` can be used to interpret a value as a boolean:
 
 Integers and floats are 64bit and signed. Languria implicitly converts between the two if needed be.
 
-The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both operands are ints), `^` (exponentiation, also used for roots if you pass a fractional exponent).
+The builtin operations are: `+`, `-`, `*`, `%`, `/` (whole division when both operands are ints), `**` (exponentiation, also used for roots if you pass a fractional exponent).
 
 ```
 17 % 3  // 2
 17/3  // 5
 17/3  // 5.666666666666667
-8 ^ 4  // 4096
-8 ^ (1.0/3)  // 2.0
+8 ** 4  // 4096
+8 ** (1.0/3)  // 2.0
 ```
 
 ### ASSOCIATIONS
@@ -212,7 +212,7 @@ new_association << |_, _|  // []  // by the same token, you can also drop the as
 ```
 
 Associations are, given certain conditions, treated as being in particular states.
-An association is in a _set state_ when all of its keys map to booleans, and it's in a _list state_ when its keys are the integers 0 to n.
+An association is _setty_ when all of its keys map to booleans, and it's _listy_ when its keys are the integers 0 to n.
 
 Lists and sets are easier to both instantiate and operate:
 
@@ -234,6 +234,15 @@ same_list = !!:[1..6]
 reversed_list = !!:[5..0]
 ```
 
+Intersection (`v`) and union (`^`) are important operations performed on associations. Both act on the associations' keys, and both prefer to keep the keys of the application on the left of the operation.
+
+```
+// notice that the intersection is made on a setty range
+!!:["A", "B", "C", "D", "E", "F"] v [:3..5]  // [3: D, 4: E]
+!!:["A", "B", "C", "D", "E", "F"] v :["this", "is", "not", "kept"]  // [0: A, 1: B, 2: C, 3: D]
+!![4: "puzzle", 0: "like", 2: "of"] ^ !![1: "pieces", 3: "a"]  // [0: like, 1: pieces, 2: of, 3: a, 4: puzzle]
+!!:["this", "is", "not", "kept"] ^ !![2: "absolutely", 5: "!"]  // [0: this, 1: is, 2: not, 3: kept, 5: !]
+```
 
 
 ### APPLICABLES
@@ -331,5 +340,5 @@ map_val = |fn_val| {
     new_assoc
 }
 
-:[1..6] @ map_val(||it^2)  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
+:[1..6] @ map_val(||it ** 2)  // [1: 0, 2: 1, 3: 4, 4: 9, 5: 16]
 ```

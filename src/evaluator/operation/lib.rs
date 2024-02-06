@@ -26,6 +26,8 @@ pub fn binary_op(eval: &mut Evaluator, tok: &Token) -> Value {
         LTE => lval.cmp_them(&rval, |a, b| a <= b),
         EQ => lval.cmp_them(&rval, |a, b| a == b),
         UNEQ => lval.cmp_them(&rval, |a, b| a != b),
+        UNION => lval.union_them(&rval),
+        INTERSECTION => lval.intersection_them(&rval),
         _ => eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![lval, rval])),
     }
 }
