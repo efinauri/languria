@@ -38,12 +38,10 @@ pub struct ValueMap {
 
 impl ValueMap {
     pub fn intersect(&self, other: &ValueMap) -> Value {
-        let k1 = self.map.keys().collect::<BTreeSet<_>>();
-        let k2 = other.map.keys().collect::<BTreeSet<_>>();
-        let mut map = BTreeMap::new();
-        for k in k1.intersection(&k2) {
-            map.insert((*k).to_owned(), self.map.get(*k).unwrap().clone());
-        }
+        let map = self.map.iter()
+            .filter(|(k, _)| other.map.contains_key(k.deref()))
+            .map(|(k, v)|(k.clone(), v.clone()))
+            .collect::<BTreeMap<_, _>>();
         ASSOCIATIONVAL(ValueMap {
             map,
             default: if other.default.is_some() { self.default.clone() } else { None },
