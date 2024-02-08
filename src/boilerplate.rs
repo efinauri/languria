@@ -92,6 +92,7 @@ impl Display for TokenType {
             PLUSASSIGN => "+=".to_string(),
             MINUSASSIGN => "-=".to_string(),
             MODULOASSIGN => "%=".to_string(),
+            ATASSIGN => "@=".to_string(),
             AT => "@".to_string(),
             ATAT => "@@".to_string(),
             BAR => "|".to_string(),

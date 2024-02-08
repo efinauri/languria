@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::vec;
 
+use crate::{Cursor, WalksCollection};
 use crate::boilerplate::ZERO_COORD;
 use crate::environment::value::Value;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::evaluator::Evaluator;
-use crate::lexer::TokenType::*;
 use crate::lexer::{Coord, Token, TokenType};
+use crate::lexer::TokenType::*;
 use crate::parser::Expression::*;
-use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -184,7 +184,7 @@ pub enum InputType {
 
 const PULL_TOKENS: [TokenType; 2] = [PULL, PULLEXTRACT];
 const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
-const ASSIGN_TOKENS: [TokenType; 8] = [
+const ASSIGN_TOKENS: [TokenType; 9] = [
     ASSIGN,
     MINASSIGN,
     MAXASSIGN,
@@ -193,6 +193,7 @@ const ASSIGN_TOKENS: [TokenType; 8] = [
     MULASSIGN,
     DIVASSIGN,
     MODULOASSIGN,
+    ATASSIGN,
 ];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
@@ -553,6 +554,21 @@ impl Parser<'_> {
         if self.can_consume() && self.curr_in(&ASSIGN_TOKENS) {
             self.cursor.step_fwd();
             return if let IDENTIFIER(str) = &self.peek_back(2).ttype {
+                // deref str immediately so that the borrow checker allows modifying self.tokens
+                let str_copy = str.clone();
+                if self.read_prev().type_equals(&ATASSIGN) {
+                    // desugaring "var @= fn(args)" into "var = var @ fn(args).
+                    // add [str, @] to examinand tokens so that varval will parse "var @ fn(args)"
+                    self.tokens.insert(self.cursor.get(),
+                                       Token::from_other(AT, self.read_prev()));
+                    self.tokens.insert(self.cursor.get(),
+                                       Token::from_other(IDENTIFIER(str_copy.clone()), self.read_prev()));
+                    return VAR_ASSIGN {
+                        varname: str_copy,
+                        op: Token::new(ASSIGN, self.read_prev().coord.row, self.read_prev().coord.column),
+                        varval: Box::new(self.build_expression()),
+                    };
+                }
                 VAR_ASSIGN {
                     varname: str.clone(),
                     op: self.read_prev().clone(),

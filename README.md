@@ -69,7 +69,12 @@ x = 1  // variables can only come into existence when they are assigned a value.
 1 == (x = 1)  // an assigment expression returns the assigned value.
 x => 2  // equivalent to x = max(x, 2)
 x =< 1  // equivalent to x = min(x, 1)
-// other assign operators: =*, =/, =%
+// other assign operators: =*, =/, =%, =@
+// =@ assigns the result of an application back to the variable holding the application's main value. these terms will be explained in the applicables' section.
+times_two = ||it * 2
+x = 5
+x =@ times_two  // equivalent to x = x @ times_two
+x == 10
 ```
 
 ## PRINT
@@ -211,24 +216,21 @@ new_association << |1, _|  // [_: 5]  // pushing an underscore signifies that we
 new_association << |_, _|  // []  // by the same token, you can also drop the association's default value in this way.
 ```
 
-Associations are, given certain conditions, treated as being in particular states.
-An association is _setty_ when all of its keys map to booleans, and it's _listy_ when its keys are the integers 0 to n.
+There some shortcuts to instantiating an association in often-used configurations. 
 
-Lists and sets are easier to both instantiate and operate:
+If you only care about the keys, you can omit defining the values with `[:keys]` (this will set the values to the boolean true).
 
-```
-//  the :[items] shorthand, when declaring a list, refers to the fact that the right side of the key:value relationships can be inferred.
-list = :["faster", "way", "to", "declare", "associations"]
-//  a similar reasoning explains the [:items] annotation. here, the values are all set to true.
-set = [:"faster", "way", "to", "declare", "associations"]
-// remember that keys are unique
-!![:1, 2, 3, 2, 1]  // [1: true, 2: true, 3: true]
-```
-
-If the side of the key/value pair that we care about is a contiguous range of integers from a to b not including b, we can use this range syntax:
+If, instead, you want an ordered collection of values, `:[values]` will associate the numbers 0 to n to the elements. 
 
 ```
-same_list = !!:[1..6]
+list = !!:["faster", "way", "to", "declare", "associations"] // [0: faster, 1: way, 2: to, 3: declare, 4: associations]
+set  = !![:"faster", "way", "to", "declare", "associations"] // [associations: true, declare: true, faster: true, to: true, way: true]
+```
+
+If the side of the key/value pair that you care about is a contiguous range of integers from a to b not including b, you can use this range syntax:
+
+```
+another_list = !!:[1..6]
 // if the range start is greater than the range's end, the numbers are reversed. 
 // note that the range start is still inclusive, and the range still stops before reaching the range's end.
 reversed_list = !!:[5..0]

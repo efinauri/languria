@@ -6,9 +6,9 @@ use std::str::FromStr;
 
 use lazy_static::lazy_static;
 
+use crate::{Cursor, WalksCollection};
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::TokenType::*;
-use crate::{Cursor, WalksCollection};
 
 mod tests;
 
@@ -65,6 +65,7 @@ pub enum TokenType {
     PLUSASSIGN,
     MINUSASSIGN,
     MODULOASSIGN,
+    ATASSIGN,
     // others
     AT,
     ATAT,
@@ -116,6 +117,15 @@ pub struct Coord {
 pub struct Token {
     pub ttype: TokenType,
     pub coord: Coord,
+}
+
+impl Token {
+    pub fn from_other(ttype: TokenType, other: &Token) -> Token {
+        Token {
+            ttype,
+            coord: Coord { row: other.coord.row, column: other.coord.column },
+        }
+    }
 }
 
 impl Token {
@@ -422,6 +432,8 @@ impl<'a> Lexer<'_> {
                         MINASSIGN
                     } else if self.consume_next_if_eq('%') {
                         MODULOASSIGN
+                    } else if self.consume_next_if_eq('@') {
+                        ATASSIGN
                     } else {
                         ASSIGN
                     }

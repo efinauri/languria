@@ -37,6 +37,7 @@ pub struct ValueMap {
 }
 
 impl ValueMap {
+    #[allow(suspicious_double_ref_op)]
     pub fn intersect(&self, other: &ValueMap) -> Value {
         let map = self.map.iter()
             .filter(|(k, _)| other.map.contains_key(k.deref()))

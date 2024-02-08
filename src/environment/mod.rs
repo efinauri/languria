@@ -4,24 +4,33 @@ use value::Value;
 use value::Value::*;
 
 use crate::errors::{Error, ErrorScribe, ErrorType};
-use crate::lexer::TokenType::*;
 use crate::lexer::{Coord, Token};
+use crate::lexer::TokenType::*;
+use crate::user_io::interpret_internal_files;
 
 pub mod value;
 
 pub struct Environment {
+    pub stdlib: HashMap<String, Value>,
     pub scopes: Vec<Scope>,
     pub last_print_line: usize,
     pub coord: Coord,
 }
 
 impl Environment {
+    fn load_stdlib(&mut self) {
+        interpret_internal_files("stdlib", self);
+    }
+
     pub fn new() -> Environment {
-        Environment {
+        let mut res = Environment {
+            stdlib: Default::default(),
             scopes: vec![Scope::new()],
             last_print_line: 0,
             coord: Coord { row: 0, column: 0 },
-        }
+        };
+        res.load_stdlib();
+        res
     }
 
     pub fn create_scope(&mut self) {
@@ -48,6 +57,7 @@ impl Environment {
     }
 
     pub fn try_read(&self, varname: &String) -> Option<&Value> {
+        if self.stdlib.contains_key(varname) { return self.stdlib.get(varname); }
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.variables.get(varname) {
                 return Some(val);
@@ -70,6 +80,7 @@ impl Environment {
     }
 
     pub fn write(&mut self, varname: &String, varval: &Value, op: &Token) -> Value {
+        if self.stdlib.contains_key(varname) { return ERRVAL; }
         let limit = self.scopes.len() - 1;
         for (scope, i) in &mut self.scopes.iter_mut().zip(0..) {
             if scope.variables.contains_key(varname) || i == limit {

@@ -1,7 +1,8 @@
-use crate::environment::value::Value::*;
 use crate::environment::value::{Value, ValueMap};
-use crate::evaluator::operation::OperationType::*;
+use crate::environment::value::Value::*;
+use crate::errors::ErrorType;
 use crate::evaluator::Evaluator;
+use crate::evaluator::operation::OperationType::*;
 use crate::lexer::{Coord, Token};
 use crate::parser::Expression;
 
@@ -98,8 +99,11 @@ impl Operation {
             LOGIC_OP(tok) => lib::logic_op(eval, &tok),
             UNARY_OP(tok) => lib::unary_op(eval, tok),
             VARASSIGN_OP(varname, op) => {
-                eval.env
-                    .write(varname, &eval.val_queue.pop_back().unwrap(), op)
+                let read_val = eval.env
+                    .write(varname, &eval.val_queue.pop_back().unwrap(), op);
+                if read_val == ERRVAL {
+                    eval.error(ErrorType::EVAL_PROTECTED_VARIABLE(varname.clone()))
+                } else { read_val }
             }
             SCOPE_CLOSURE_OP(_) => lib::scope_closure_op(eval, previous_val),
             RETURN_CLEANUP => lib::return_cleanup_op(eval),

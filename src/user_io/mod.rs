@@ -1,6 +1,7 @@
+use std::{fs, io};
 use std::fs::File;
 use std::io::{stdout, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use rustyline::error::ReadlineError;
@@ -134,5 +135,27 @@ pub trait Red {
 impl Red for String {
     fn red(&self) -> Self {
         format!("{}{}{}", "\x1b[0;31m", self, "\x1b[0m")
+    }
+}
+
+
+pub fn interpret_internal_files(location: &str, env: &mut Environment) {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push(location);
+
+    let files = fs::read_dir(path)
+        .unwrap()
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()
+        .unwrap();
+
+    let mut scribe = ErrorScribe::from_termination_policy(STRICT);
+    for f in files {
+        let mut contents = String::new();
+        File::open(f)
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+        assert!(interpret_instructions(&mut scribe, contents, env, false));
     }
 }
