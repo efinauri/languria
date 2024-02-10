@@ -1,11 +1,11 @@
 use std::ops::Deref;
 
-use crate::environment::value::Value::*;
 use crate::environment::value::{Value, ValueMap};
+use crate::environment::value::Value::*;
 use crate::errors::ErrorType::*;
+use crate::evaluator::Evaluator;
 use crate::evaluator::operation::Operation;
 use crate::evaluator::operation::OperationType::*;
-use crate::evaluator::Evaluator;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::Expression;
@@ -144,7 +144,7 @@ pub fn bind_application_args_to_params_op(
                     Box::from(arg),
                     Box::from(eval.exp_queue.back().unwrap().clone()),
                 ))
-                .value(eval, &NOTAVAL)
+                    .value(eval, &NOTAVAL)
             }
             _ => eval.error(EVAL_ITER_APPL_ON_NONITER(arg)),
         };
@@ -359,4 +359,11 @@ pub fn ti_rebinder_op(eval: &mut Evaluator) -> Value {
     let ti = eval.val_queue.pop_back().unwrap();
     eval.env.write_binding(&"ti".to_string(), &ti);
     NOTAVAL
+}
+
+pub fn native_fn_caller_op(eval: &mut Evaluator, fn_name: &String) -> Value {
+    let module = if let Some(m) = eval.env.module_having(fn_name) {
+        m.clone()
+    } else { return ERRVAL; };
+    module.invoke(eval, fn_name)
 }

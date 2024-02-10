@@ -128,9 +128,7 @@ pub fn interpret_instructions(
     return evaluator.was_evaluation_consistent();
 }
 
-pub trait Red {
-    fn red(&self) -> Self;
-}
+pub trait Red { fn red(&self) -> Self; }
 
 impl Red for String {
     fn red(&self) -> Self {

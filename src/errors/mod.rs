@@ -76,6 +76,7 @@ pub enum ErrorType {
     EVAL_UNEXPECTED_EXPRESSION,
     EVAL_UNEXPECTED_NUMBER_OF_PARAMS { passed: usize, expected: usize },
     EVAL_PROTECTED_VARIABLE(String),
+    EVAL_NO_SUCH_MODULE(String),
 }
 
 #[derive(Debug)]
@@ -124,6 +125,7 @@ impl Display for Error {
                 if you're trying to call an applicable with no args, you need to pass _ as the only argument.",
                 expected, passed
             ),
+            ErrorType::EVAL_NO_SUCH_MODULE(str) => format!("`{str}` is not a native module."),
             ErrorType::EVAL_PROTECTED_VARIABLE(str) => format!("`{str}` is a standard library value, and cannot be reassigned."),
             ErrorType::GENERICERROR => "generic error".to_string()
         };

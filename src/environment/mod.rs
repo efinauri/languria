@@ -6,11 +6,13 @@ use value::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
+use crate::stdlib_modules::Module;
 use crate::user_io::interpret_internal_files;
 
 pub mod value;
 
 pub struct Environment {
+    pub imported_modules: Vec<Module>,
     pub stdlib: HashMap<String, Value>,
     pub scopes: Vec<Scope>,
     pub last_print_line: usize,
@@ -18,18 +20,24 @@ pub struct Environment {
 }
 
 impl Environment {
-    fn load_stdlib(&mut self) {
-        interpret_internal_files("stdlib", self);
+    pub fn module_having(&self, fn_name: &String) -> Option<&Module> {
+        self.imported_modules.iter()
+            .find(|m|m.has_func_name(fn_name))
     }
+}
+
+impl Environment {
+    fn load_native_stdlib(&mut self) { interpret_internal_files("stdlib", self); }
 
     pub fn new() -> Environment {
         let mut res = Environment {
+            imported_modules: Default::default(),
             stdlib: Default::default(),
             scopes: vec![Scope::new()],
             last_print_line: 0,
             coord: Coord { row: 0, column: 0 },
         };
-        res.load_stdlib();
+        res.load_native_stdlib();
         res
     }
 

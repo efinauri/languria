@@ -8,6 +8,7 @@ mod evaluator;
 mod lexer;
 mod parser;
 pub mod user_io;
+mod stdlib_modules;
 
 #[derive(Debug)]
 pub struct Cursor {

@@ -3,17 +3,18 @@ use std::ops::Deref;
 
 use log::error;
 
-use crate::environment::value::Value::*;
-use crate::environment::value::{Value, ValueMap};
 use crate::environment::Environment;
-use crate::errors::ErrorType::EVAL_INVALID_PUSH;
+use crate::environment::value::{Value, ValueMap};
+use crate::environment::value::Value::*;
 use crate::errors::{Error, ErrorScribe, ErrorType};
+use crate::errors::ErrorType::EVAL_INVALID_PUSH;
 use crate::evaluator::operation::Operation;
 use crate::evaluator::operation::OperationType::*;
 use crate::evaluator::OperationStatus::*;
 use crate::lexer::Token;
 use crate::lexer::TokenType::*;
 use crate::parser::{AssociationState, Expression};
+use crate::stdlib_modules::MODULE_NAMES;
 
 mod lib;
 mod tests;
@@ -145,14 +146,28 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(PRINT_OP(tag)));
                     NOTAVAL
                 }
+
+                Expression::IMPORT_EXPR(str) => {
+                    let module = MODULE_NAMES.get(str.as_str());
+                    if module.is_none() { return self.error(ErrorType::EVAL_NO_SUCH_MODULE(str)); } else {
+                        self.env.imported_modules.push(module.unwrap().clone());
+                        continue;
+                    }
+                }
+
                 Expression::VAR_RAW(_, varname) => self.env.read(&varname, self.scribe).clone(),
+
                 Expression::ARGS(_) => self.error(ErrorType::EVAL_UNEXPECTED_EXPRESSION),
+
                 Expression::APPLICABLE_EXPR { params: arg, body } => LAMBDAVAL {
                     params: arg.clone(),
                     body: body.clone(),
                 },
+
                 Expression::NOTANEXPR => self.error(ErrorType::EVAL_INVALID_EXPR),
+
                 Expression::VALUE_WRAPPER(val) => val.deref().clone(),
+
                 Expression::OPTION_EXPR(ex) => {
                     if ex.type_equals(&Expression::UNDERSCORE_EXPR(Default::default())) {
                         OPTIONVAL(None)
@@ -162,6 +177,7 @@ impl<'a> Evaluator<'a> {
                         NOTAVAL
                     }
                 }
+
                 Expression::SET_DECLARATION_EXPR {
                     input_type,
                     items,
@@ -175,6 +191,7 @@ impl<'a> Evaluator<'a> {
                     &mut aux_exp_queue,
                     &mut aux_op_queue,
                 ),
+
                 Expression::LIST_DECLARATION_EXPR {
                     input_type,
                     items,
@@ -188,6 +205,7 @@ impl<'a> Evaluator<'a> {
                     &mut aux_exp_queue,
                     &mut aux_op_queue,
                 ),
+
                 Expression::PUSH_EXPR { obj, args } => {
                     if let Expression::VAR_RAW(_, varname) = obj.deref() {
                         // when obj being pushed into is a var, push needs to be first desugared from
@@ -220,6 +238,7 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                 }
+
                 Expression::APPLIED_EXPR {
                     it_arg,
                     op,
@@ -227,6 +246,7 @@ impl<'a> Evaluator<'a> {
                     contour_args,
                 } => {
                     self.create_scope_lazily();
+                    // package the args and the operation to evaluate them.
                     let mut total_args_size = 1;
                     if let Some(args) = contour_args {
                         total_args_size += args.len();
@@ -236,23 +256,37 @@ impl<'a> Evaluator<'a> {
                     }
                     aux_exp_queue.push_front(*it_arg);
 
-                    aux_op_queue.push_front(Operation::from_type(
-                        BIND_APPLICATION_ARGS_TO_PARAMS_OP(total_args_size, op.clone()),
-                    ));
-                    if op.type_equals(&AT) {
-                        body = Box::from(body.into_applicable());
-                        aux_op_queue.push_front(Operation::from_type(AT_APPLICABLE_RESOLVER_OP));
+                    // if application is builtin there's no fn body to queue, since the evaluation is with Rust.
+                    // instead we queue up the args and said evaluation.
+                    let mut evaluated_as_native = false;
+                    if let Expression::VAR_RAW(_, str) = body.deref() {
+                        if self.env.module_having(str).is_some() {
+                            evaluated_as_native = true;
+                            aux_op_queue.push_front(Operation::from_type(NATIVE_FN_CALLER_OP(total_args_size, str.clone())));
+                        }
                     }
-                    aux_exp_queue.push_front(*body);
+                    if !evaluated_as_native {
+                        aux_op_queue.push_front(Operation::from_type(
+                            BIND_APPLICATION_ARGS_TO_PARAMS_OP(total_args_size, op.clone()),
+                        ));
+
+                        if op.type_equals(&AT) {
+                            body = Box::from(body.into_applicable());
+                            aux_op_queue.push_front(Operation::from_type(AT_APPLICABLE_RESOLVER_OP));
+                        }
+                        aux_exp_queue.push_front(*body);
+                    }
                     aux_op_queue.push_front(Operation::from_type(SCOPE_CLOSURE_OP(1)));
                     NOTAVAL
                 }
+
                 Expression::PULL_EXPR { source, op, key } => {
                     aux_exp_queue.push_front(*source);
                     aux_exp_queue.push_front(*key);
                     aux_op_queue.push_front(Operation::from_type(PULL_OP(op)));
                     NOTAVAL
                 }
+
                 Expression::ASSOCIATION_EXPR(pairs, is_lazy) => {
                     if pairs.is_empty() {
                         ASSOCIATIONVAL(ValueMap::new())
@@ -269,11 +303,13 @@ impl<'a> Evaluator<'a> {
                         NOTAVAL
                     }
                 }
+
                 Expression::RETURN_EXPR(expr) => {
                     aux_exp_queue.push_front(*expr);
                     aux_op_queue.push_front(Operation::from_type(RETURN_CLEANUP));
                     NOTAVAL
                 }
+
                 Expression::BLOCK(exprs) => {
                     for ex in &exprs {
                         aux_exp_queue.push_front(*ex.clone());
@@ -282,10 +318,12 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(SCOPE_CLOSURE_OP(exprs.len())));
                     NOTAVAL
                 }
+
                 Expression::GROUPING(expr) => {
                     aux_exp_queue.push_front(*expr);
                     NOTAVAL
                 }
+
                 Expression::VAR_ASSIGN {
                     varname,
                     op,
@@ -295,7 +333,9 @@ impl<'a> Evaluator<'a> {
                     aux_op_queue.push_front(Operation::from_type(VARASSIGN_OP(varname, op)));
                     NOTAVAL
                 }
+
                 Expression::UNDERSCORE_EXPR(_) => UNDERSCOREVAL,
+
                 Expression::LITERAL(value) => match &value.ttype {
                     EOLPRINT => self.print_debug_brick(&value),
                     FALSE => BOOLEANVAL(false),
@@ -308,17 +348,20 @@ impl<'a> Evaluator<'a> {
                     IDX => self.read_var(&"idx".to_string()),
                     _ => self.error(ErrorType::EVAL_INVALID_LITERAL),
                 },
+
                 Expression::UNARY { op, expr } => {
                     aux_exp_queue.push_front(*expr);
                     aux_op_queue.push_front(Operation::from_type(UNARY_OP(op)));
                     NOTAVAL
                 }
+
                 Expression::LOGIC { lhs, op, rhs } => {
                     aux_exp_queue.push_front(*lhs);
                     aux_exp_queue.push_front(*rhs);
                     aux_op_queue.push_front(Operation::from_type(LAZY_LOGIC_OP(op)));
                     NOTAVAL
                 }
+
                 Expression::BINARY { lhs, op, rhs } => {
                     aux_exp_queue.push_front(*lhs);
                     aux_exp_queue.push_front(*rhs);

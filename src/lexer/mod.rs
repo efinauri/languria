@@ -90,6 +90,7 @@ pub enum TokenType {
     EOF,
     //tbdeleted
     DOT,
+    IMPORT,
 }
 lazy_static! {
     static ref RESERVED_KEYWORDS: HashMap<&'static str, TokenType> = HashMap::from([
@@ -103,7 +104,8 @@ lazy_static! {
         ("xor", XOR),
         ("or", OR),
         ("not", NOT),
-        ("v", INTERSECTION)
+        ("v", INTERSECTION),
+        ("import", IMPORT),
     ]);
 }
 

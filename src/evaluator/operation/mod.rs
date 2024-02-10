@@ -24,6 +24,7 @@ pub enum OperationType {
     PULL_OP(Token),
     BIND_APPLICATION_ARGS_TO_PARAMS_OP(usize, Token),
     AT_APPLICABLE_RESOLVER_OP,
+    NATIVE_FN_CALLER_OP(usize, String),
     ASSOC_PUSHER_OP,
     ITERATIVE_PARAM_BINDER(usize, Box<Value>, Box<Expression>),
     TI_REBINDER_OP,
@@ -61,6 +62,7 @@ impl Operation {
             PULL_OP(_) => 2,
             BIND_APPLICATION_ARGS_TO_PARAMS_OP(n, _) => *n,
             AT_APPLICABLE_RESOLVER_OP => 1,
+            NATIVE_FN_CALLER_OP(n, _) => *n,
             ASSOC_PUSHER_OP => 3,
             ITERATIVE_PARAM_BINDER(_, _, _) => 1,
             TI_REBINDER_OP => 1,
@@ -122,6 +124,7 @@ impl Operation {
             }
             TI_REBINDER_OP => lib::ti_rebinder_op(eval),
             AT_APPLICABLE_RESOLVER_OP => lib::at_applicable_resolver_op(eval),
+            NATIVE_FN_CALLER_OP(_, str) => lib::native_fn_caller_op(eval, str),
             ASSOC_PUSHER_OP => lib::assoc_pusher_op(eval),
         }
     }

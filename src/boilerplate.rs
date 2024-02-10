@@ -112,6 +112,7 @@ impl Display for TokenType {
             DOT => ".".to_string(),
             UNION => "^".to_string(),
             INTERSECTION => "v".to_string(),
+            IMPORT => "import".to_string(),
         };
         f.write_str(string.as_str())
     }
@@ -133,6 +134,7 @@ impl Expression {
     fn indented_string(&self, prefix: &str, idt: usize) -> String {
         let content =
             match &self {
+                IMPORT_EXPR(str) => format!("IMPORT {str}"),
                 LITERAL(tok) => format!("LITERAL ({tok}"),
                 UNARY { op, expr } => format!(
                     "UNARY ({op}\n{}",
@@ -323,6 +325,7 @@ impl Display for crate::evaluator::operation::OperationType {
             PULL_OP(_) => "PULL",
             BIND_APPLICATION_ARGS_TO_PARAMS_OP(_, _) => "ARGBIND",
             AT_APPLICABLE_RESOLVER_OP => "APPLICATION",
+            NATIVE_FN_CALLER_OP(_,_) => "APPLICATION(N)",
             ASSOC_PUSHER_OP => "PUSH",
             ITERATIVE_PARAM_BINDER(_, _, _) => "@@ITER",
             TI_REBINDER_OP => "TIREBIND",

@@ -73,6 +73,7 @@ pub enum Expression {
     OPTION_EXPR(Box<Expression>),
     UNDERSCORE_EXPR(Coord),
     PRINT_EXPR(Box<Expression>, Option<String>),
+    IMPORT_EXPR(String),
 
     NOTANEXPR,
     // when an expr is desugared into a bigger one this is a way to evaluate once, and carry around,
@@ -124,6 +125,7 @@ impl Expression {
             ASSOCIATION_EXPR(v, _) => v.first().map(|(ex, _)| ex.coord()).unwrap_or(&ZERO_COORD),
 
             LIST_DECLARATION_EXPR { .. }
+            | IMPORT_EXPR(_)
             | SET_DECLARATION_EXPR { .. }
             | VALUE_WRAPPER(_)
             | NOTANEXPR => &ZERO_COORD,
@@ -488,6 +490,13 @@ impl Parser<'_> {
             IT | TI | IDX | FALSE | TRUE | INTEGER(_) | STRING(_) | FLOAT(_) | EOLPRINT => {
                 self.cursor.step_fwd();
                 LITERAL(self.read_prev().clone())
+            }
+            IMPORT => {
+                self.cursor.step_fwd();
+                self.assert_curr_is(IDENTIFIER(String::new()));
+                let str = if let IDENTIFIER(str) = &self.read_curr().ttype {str.clone()} else {"".to_string()};
+                self.cursor.step_fwd();
+                IMPORT_EXPR(str)
             }
             LPAREN => {
                 self.cursor.step_fwd();
