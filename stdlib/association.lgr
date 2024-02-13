@@ -1,1 +1,9 @@
+len = || {
+    it @ is_empty and return 0
+    1 + it @@ idx
+}
+
+push = |item| it << |it @ len, item|
 pop = |key| it << |key, _|
+
+

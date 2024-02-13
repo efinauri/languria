@@ -77,6 +77,8 @@ pub enum ErrorType {
     EVAL_UNEXPECTED_NUMBER_OF_PARAMS { passed: usize, expected: usize },
     EVAL_PROTECTED_VARIABLE(String),
     EVAL_NO_SUCH_MODULE(String),
+    EVAL_EMPTY_BLOCK,
+    EVAL_EMPTY_ITERATION,
 }
 
 #[derive(Debug)]
@@ -127,6 +129,9 @@ impl Display for Error {
             ),
             ErrorType::EVAL_NO_SUCH_MODULE(str) => format!("`{str}` is not a native module."),
             ErrorType::EVAL_PROTECTED_VARIABLE(str) => format!("`{str}` is a standard library value, and cannot be reassigned."),
+            ErrorType::EVAL_EMPTY_BLOCK => "a block must contain at least one expression".to_string(),
+            ErrorType::EVAL_EMPTY_ITERATION => "the argument of a @@ iterable must allow at least one iteration to happen (cannot be empty).".to_string(),
+
             ErrorType::GENERICERROR => "generic error".to_string()
         };
         f.write_str(&*(self.err_location() + &*msg).red())

@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use crate::environment::value::{Value, ValueMap};
 use crate::environment::value::Value::*;
+use crate::errors::ErrorType;
 use crate::errors::ErrorType::*;
 use crate::evaluator::Evaluator;
 use crate::evaluator::operation::Operation;
@@ -87,22 +88,24 @@ pub fn iterative_param_binder_op(
     let len: isize;
     match iterand.deref() {
         STRINGVAL(str) => {
+            len = str.len() as isize;
+            if len == 0 { return eval.error(EVAL_EMPTY_ITERATION); }
             it = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
             ti = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
             idx = INTEGERVAL(*past_iterations as i64);
-            len = str.len() as isize;
         }
         ASSOCIATIONVAL(map) => {
+            len = map.len() as isize;
+            if len == 0 { return eval.error(EVAL_EMPTY_ITERATION); }
             it = map.ith_key(past_iterations);
             ti = map.ith_val(past_iterations);
             idx = INTEGERVAL(*past_iterations as i64);
-            len = map.len() as isize;
         }
         UNDERSCOREVAL => {
+            len = -1;
             it = INTEGERVAL(*past_iterations as i64);
             ti = INTEGERVAL(*past_iterations as i64);
             idx = INTEGERVAL(*past_iterations as i64);
-            len = -1;
         }
         _ => {
             return eval.error(EVAL_ITER_APPL_ON_NONITER(iterand.deref().clone()));

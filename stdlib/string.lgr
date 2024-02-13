@@ -1,0 +1,20 @@
+split = |separator| { str = it
+    result = []
+    growing_string = ""
+    str @@ {
+//        (separator == it) and {
+//            result =@ push(growing_string)
+//            growing_string = ""
+//        } or {
+//            growing_string += it
+//        }
+
+        [true: {
+            result =@ push(growing_string)
+            growing_string = ""
+        }, false: growing_string += it
+        ] |>> separator == it
+        $idx
+    }
+    result @ push(growing_string)
+}

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::var;
 
 use value::Value;
 use value::Value::*;
@@ -7,6 +8,7 @@ use crate::errors::{Error, ErrorScribe, ErrorType};
 use crate::lexer::{Coord, Token};
 use crate::lexer::TokenType::*;
 use crate::stdlib_modules::Module;
+use crate::stdlib_modules::Module::AUTOINCL;
 use crate::user_io::interpret_internal_files;
 
 pub mod value;
@@ -31,7 +33,7 @@ impl Environment {
 
     pub fn new() -> Environment {
         let mut res = Environment {
-            imported_modules: Default::default(),
+            imported_modules: vec![AUTOINCL],
             stdlib: Default::default(),
             scopes: vec![Scope::new()],
             last_print_line: 0,
@@ -139,7 +141,7 @@ impl Scope {
                 ASSIGN => varval.clone(),
                 MINASSIGN => varval.min_them(ov),
                 MAXASSIGN => varval.max_them(ov),
-                PLUSASSIGN => varval.plus_them(ov),
+                PLUSASSIGN => ov.plus_them(varval),
                 MINUSASSIGN => ov.minus_them(&varval),
                 MULASSIGN => varval.mul_them(ov),
                 DIVASSIGN => ov.div_them(&varval),

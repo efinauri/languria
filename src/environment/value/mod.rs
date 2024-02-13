@@ -32,7 +32,7 @@ pub enum Value {
 
 #[derive(Clone, Debug)]
 pub struct ValueMap {
-    map: BTreeMap<Box<Value>, Box<Value>>,
+    pub(crate) map: BTreeMap<Box<Value>, Box<Value>>,
     pub default: Option<Box<Value>>,
 }
 
@@ -241,7 +241,7 @@ impl Value {
             STRINGVAL(str) => BOOLEANVAL(str.len() > 0),
             OPTIONVAL(opt) => BOOLEANVAL(opt.is_some()),
             ASSOCIATIONVAL(map) => BOOLEANVAL(map.iter().len() > 0),
-            _ => ERRVAL,
+            _ => BOOLEANVAL(true),
         };
     }
 

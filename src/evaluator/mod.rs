@@ -311,6 +311,7 @@ impl<'a> Evaluator<'a> {
                 }
 
                 Expression::BLOCK(exprs) => {
+                    if exprs.is_empty() {return self.error(ErrorType::EVAL_EMPTY_BLOCK)}
                     for ex in &exprs {
                         aux_exp_queue.push_front(*ex.clone());
                     }
