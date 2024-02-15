@@ -101,11 +101,11 @@ impl Operation {
             LOGIC_OP(tok) => lib::logic_op(eval, &tok),
             UNARY_OP(tok) => lib::unary_op(eval, tok),
             VARASSIGN_OP(varname, op) => {
-                let read_val = eval.env
+                let written_val = eval.env
                     .write(varname, &eval.val_queue.pop_back().unwrap(), op);
-                if read_val == ERRVAL {
+                if written_val == ERRVAL {
                     eval.error(ErrorType::EVAL_PROTECTED_VARIABLE(varname.clone()))
-                } else { read_val }
+                } else { written_val }
             }
             SCOPE_CLOSURE_OP(_) => lib::scope_closure_op(eval, previous_val),
             RETURN_CLEANUP => lib::return_cleanup_op(eval),

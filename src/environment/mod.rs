@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env::var;
 
 use value::Value;
 use value::Value::*;
@@ -146,6 +145,8 @@ impl Scope {
                 MULASSIGN => varval.mul_them(ov),
                 DIVASSIGN => ov.div_them(&varval),
                 MODULOASSIGN => ov.modulo_them(&varval),
+                UNIONASSIGN => ov.union_them(&varval),
+                INTERSECTIONASSIGN => ov.intersection_them(&varval),
                 _ => ERRVAL,
             },
         };

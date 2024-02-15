@@ -4,6 +4,27 @@ len = || {
 }
 
 push = |item| it << |it @ len, item|
+
 pop = |key| it << |key, _|
 
+filter = |pred| { assoc = it
+    result = []
+    assoc @@ { key = it
+        _@ pred(key, ti, idx) and (result << |key, ti|)
+    }
+    result
+}
 
+map = |pred| { assoc = it
+    result = []
+    assoc @@ { key = it
+        result =^ _@ pred(key, ti, idx)
+
+    }
+    result
+}
+
+last = || {
+    it @ is_empty and return ?_
+    it >> (it @@ idx)
+}

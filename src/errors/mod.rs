@@ -79,6 +79,7 @@ pub enum ErrorType {
     EVAL_NO_SUCH_MODULE(String),
     EVAL_EMPTY_BLOCK,
     EVAL_EMPTY_ITERATION,
+    EVAL_NATIVE_FN_NOT_CALLABLE(String),
 }
 
 #[derive(Debug)]
@@ -131,6 +132,7 @@ impl Display for Error {
             ErrorType::EVAL_PROTECTED_VARIABLE(str) => format!("`{str}` is a standard library value, and cannot be reassigned."),
             ErrorType::EVAL_EMPTY_BLOCK => "a block must contain at least one expression".to_string(),
             ErrorType::EVAL_EMPTY_ITERATION => "the argument of a @@ iterable must allow at least one iteration to happen (cannot be empty).".to_string(),
+            ErrorType::EVAL_NATIVE_FN_NOT_CALLABLE(fnn) => format!("internal error: cannot call `{fnn}'"),
 
             ErrorType::GENERICERROR => "generic error".to_string()
         };

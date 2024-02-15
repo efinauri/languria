@@ -66,6 +66,8 @@ pub enum TokenType {
     MINUSASSIGN,
     MODULOASSIGN,
     ATASSIGN,
+    UNIONASSIGN,
+    INTERSECTIONASSIGN,
     // others
     AT,
     ATAT,
@@ -436,6 +438,10 @@ impl<'a> Lexer<'_> {
                         MODULOASSIGN
                     } else if self.consume_next_if_eq('@') {
                         ATASSIGN
+                    } else if self.consume_next_if_eq('^') {
+                        UNIONASSIGN
+                    } else if self.consume_next_if_eq('v') {
+                        INTERSECTIONASSIGN
                     } else {
                         ASSIGN
                     }

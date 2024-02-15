@@ -14,7 +14,7 @@ use crate::parser::Expression;
 pub fn binary_op(eval: &mut Evaluator, tok: &Token) -> Value {
     let rval = eval.val_queue.pop_back().unwrap();
     let lval = eval.val_queue.pop_back().unwrap();
-    match tok.ttype {
+    let result = match tok.ttype {
         PLUS => lval.plus_them(&rval),
         MINUS => lval.minus_them(&rval),
         MUL => lval.mul_them(&rval),
@@ -29,8 +29,11 @@ pub fn binary_op(eval: &mut Evaluator, tok: &Token) -> Value {
         UNEQ => lval.cmp_them(&rval, |a, b| a != b),
         UNION => lval.union_them(&rval),
         INTERSECTION => lval.intersection_them(&rval),
-        _ => eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![lval, rval])),
-    }
+        _ => ERRVAL
+    };
+    if result == ERRVAL {
+            eval.error(EVAL_INVALID_OP(tok.ttype.to_owned(), vec![lval, rval]))
+    } else { result }
 }
 
 pub fn assoc_pusher_op(eval: &mut Evaluator) -> Value {
@@ -90,7 +93,7 @@ pub fn iterative_param_binder_op(
         STRINGVAL(str) => {
             len = str.len() as isize;
             if len == 0 { return eval.error(EVAL_EMPTY_ITERATION); }
-            it = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
+            it = INTEGERVAL(*past_iterations as i64);
             ti = STRINGVAL(String::from(str.chars().nth(*past_iterations).unwrap()));
             idx = INTEGERVAL(*past_iterations as i64);
         }
@@ -227,9 +230,6 @@ pub fn pull_op(eval: &mut Evaluator, tok: &Token) -> Value {
 
 pub fn lazy_logic_op(eval: &mut Evaluator, tok: &Token) -> Value {
     let lhs = eval.val_queue.back().unwrap();
-    if lhs.as_bool_val().type_equals(&ERRVAL) {
-        return eval.error(EVAL_NOT_BOOLEANABLE(lhs.to_owned()));
-    }
     let can_exit_early = match (&tok.ttype, lhs.as_bool_val()) {
         (AND, BOOLEANVAL(bool)) => !bool,
         (OR, BOOLEANVAL(bool)) => bool,
@@ -367,6 +367,6 @@ pub fn ti_rebinder_op(eval: &mut Evaluator) -> Value {
 pub fn native_fn_caller_op(eval: &mut Evaluator, fn_name: &String) -> Value {
     let module = if let Some(m) = eval.env.module_having(fn_name) {
         m.clone()
-    } else { return ERRVAL; };
+    } else { return eval.error(ErrorType::EVAL_NATIVE_FN_NOT_CALLABLE(fn_name.to_owned())); };
     module.invoke(eval, fn_name)
 }

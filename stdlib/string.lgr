@@ -2,19 +2,24 @@ split = |separator| { str = it
     result = []
     growing_string = ""
     str @@ {
-//        (separator == it) and {
-//            result =@ push(growing_string)
-//            growing_string = ""
-//        } or {
-//            growing_string += it
-//        }
-
-        [true: {
+        (separator == ti) and {
             result =@ push(growing_string)
             growing_string = ""
-        }, false: growing_string += it
-        ] |>> separator == it
-        $idx
+            true
+        } or { growing_string += ti }
     }
     result @ push(growing_string)
+}
+
+is_digit = || {
+    it == "0" or
+    it == "1" or
+    it == "2" or
+    it == "3" or
+    it == "4" or
+    it == "5" or
+    it == "6" or
+    it == "7" or
+    it == "8" or
+    it == "9"
 }

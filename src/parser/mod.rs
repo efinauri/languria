@@ -186,7 +186,7 @@ pub enum InputType {
 
 const PULL_TOKENS: [TokenType; 2] = [PULL, PULLEXTRACT];
 const APPLICATION_TOKENS: [TokenType; 2] = [AT, ATAT];
-const ASSIGN_TOKENS: [TokenType; 9] = [
+const ASSIGN_TOKENS: [TokenType; 11] = [
     ASSIGN,
     MINASSIGN,
     MAXASSIGN,
@@ -196,6 +196,8 @@ const ASSIGN_TOKENS: [TokenType; 9] = [
     DIVASSIGN,
     MODULOASSIGN,
     ATASSIGN,
+    UNIONASSIGN,
+    INTERSECTIONASSIGN,
 ];
 const EQ_TOKENS: [TokenType; 2] = [UNEQ, EQ];
 const CMP_TOKENS: [TokenType; 4] = [GT, LT, GTE, LTE];
